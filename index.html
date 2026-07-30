@@ -1,6 +1,35 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<head>
+<head> <script
+  async
+  crossorigin="anonymous"
+  data-clerk-publishable-key="pk_test_dGhvcm91Z2gtbGFiLTU5LmNsZXJrLmFjY291bnRzLmRldiQ"
+  src="https://[NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_dGhvcm91Z2gtbGFiLTU5LmNsZXJrLmFjY291bnRzLmRldiQ].clerk.accounts.dev/npm/@clerk/clerk-js@latest/dist/clerk.browser.js"
+  type="text/javascript"
+></script>
+<div id="sign-in"></div>
+<div id="user-button"></div>
+const role = Clerk.user.publicMetadata.role || "usuario";
+
+if (role === "admin") {
+  // libera área restrita
+} else {
+  // mostra só o conteúdo comum
+}
+
+<script>
+  window.addEventListener('load', async function () {
+    await Clerk.load();
+
+    if (Clerk.user) {
+      // usuário já logado
+      Clerk.mountUserButton(document.getElementById('user-button'));
+    } else {
+      // mostra tela de login
+      Clerk.mountSignIn(document.getElementById('sign-in'));
+    }
+  });
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PGP Agosto/2026 — Casa dos Salgados Alimentos</title>
