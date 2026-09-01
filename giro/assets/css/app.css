@@ -160,8 +160,9 @@ a { color: var(--accent); text-underline-offset: 2px; }
 /* ---------- 3. Casca do app ---------- */
 .app {
   min-height: 100%;
+  min-height: 100dvh;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr auto auto;
   /* sem isto, uma tabela larga faz a coluna implícita do grid estourar e
      arrasta a página inteira para a rolagem horizontal */
   grid-template-columns: minmax(0, 1fr);
@@ -169,8 +170,7 @@ a { color: var(--accent); text-underline-offset: 2px; }
 
 .topbar {
   position: sticky; top: 0; z-index: 40;
-  background: color-mix(in srgb, var(--bg) 86%, transparent);
-  backdrop-filter: saturate(180%) blur(12px);
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
 .topbar-in {
@@ -194,7 +194,6 @@ a { color: var(--accent); text-underline-offset: 2px; }
   color: var(--text-2); width: 36px; height: 36px; border-radius: 10px;
   display: grid; place-items: center; cursor: pointer; padding: 0;
 }
-.icon-btn:hover { color: var(--text-1); border-color: var(--line-strong); }
 .icon-btn svg { width: 17px; height: 17px; }
 
 /* navegação desktop */
@@ -203,14 +202,12 @@ a { color: var(--accent); text-underline-offset: 2px; }
   text-decoration: none; color: var(--text-2); font-weight: 550; font-size: 0.875rem;
   padding: 7px 11px; border-radius: 9px;
 }
-.nav-desktop a:hover { color: var(--text-1); background: var(--surface-2); }
 .nav-desktop a[aria-current="page"] { color: var(--text-1); background: var(--surface-2); font-weight: 650; }
 
 /* navegação mobile (tab bar) */
 .nav-mobile {
   position: sticky; bottom: 0; z-index: 40;
-  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
-  backdrop-filter: saturate(180%) blur(12px);
+  background: var(--surface-1);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
@@ -320,14 +317,10 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   background: var(--surface-2); color: var(--text-1);
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
 }
-.btn:hover { background: var(--surface-3); }
 .btn svg { width: 16px; height: 16px; }
 .btn-primary { background: var(--accent); color: var(--accent-ink); }
-.btn-primary:hover { filter: brightness(1.07); background: var(--accent); }
 .btn-ghost { background: transparent; border-color: var(--line); color: var(--text-2); }
-.btn-ghost:hover { background: var(--surface-2); color: var(--text-1); }
 .btn-danger { background: transparent; border-color: var(--line); color: var(--critical); }
-.btn-danger:hover { background: var(--critical-soft); }
 .btn-sm { padding: 7px 11px; min-height: 36px; font-size: 0.8125rem; }
 .btn-block { width: 100%; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -402,7 +395,6 @@ tfoot td { font-weight: 700; border-top: 1px solid var(--line-strong); border-bo
 .chart .lbl { fill: var(--text-2); font-size: 10px; }
 .chart .lbl-strong { fill: var(--text-1); font-size: 10px; font-weight: 650; font-family: var(--font-num); }
 .chart .hit { fill: transparent; cursor: pointer; }
-.chart .hit:hover + .bar, .chart .bar.is-hot { filter: brightness(1.12); }
 
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-2); }
@@ -488,9 +480,8 @@ tfoot td { font-weight: 700; border-top: 1px solid var(--line-strong); border-bo
 .tips-dots { display: flex; gap: 5px; flex-wrap: wrap; margin-right: auto; }
 .tips-dots button {
   appearance: none; border: 0; padding: 0; cursor: pointer;
-  width: 7px; height: 7px; border-radius: 999px; background: var(--surface-3);
+  background: transparent;
 }
-.tips-dots button[aria-current="true"] { background: var(--accent); width: 20px; }
 .tips-nav { display: flex; gap: 6px; }
 
 .tips-progress { height: 3px; background: var(--surface-2); }
@@ -529,7 +520,7 @@ tfoot td { font-weight: 700; border-top: 1px solid var(--line-strong); border-bo
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   border: 1px solid var(--line); border-bottom: 0;
   box-shadow: var(--shadow-2);
-  max-height: 92vh; overflow-y: auto;
+  max-height: 92vh; max-height: 92dvh; overflow-y: auto; overscroll-behavior: contain;
   padding: 20px 18px calc(20px + env(safe-area-inset-bottom, 0));
 }
 .modal h2 { margin-bottom: 6px; }
@@ -588,4 +579,140 @@ details > summary::-webkit-details-marker { display: none; }
 code {
   font-family: var(--font-num); font-size: 0.8125em;
   background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+}
+
+
+/* ==========================================================================
+   16. Mobile: Chrome (Android), Firefox (Android) e Safari (iOS)
+   --------------------------------------------------------------------------
+   Testado nos três motores em viewport de celular. O que este bloco resolve:
+
+   • Safari só passou a aceitar backdrop-filter sem prefixo no Safari 18; até o
+     iOS 17 é -webkit-backdrop-filter. E color-mix() só existe a partir do
+     Safari 16.2. Por isso as barras têm fundo sólido por padrão e só ficam
+     translúcidas dentro de um @supports que exige as duas coisas.
+   • Em tela de toque, :hover gruda: o botão fica "aceso" depois do toque até
+     você tocar em outro lugar. Todo :hover está isolado em (hover: hover), e
+     no lugar dele o toque ganha resposta em :active.
+   • O iOS ignora border-radius e background em <select> e em campos de data
+     sem appearance: none.
+   • Alvo de toque de 24 px como piso, inclusive nos pontinhos do carrossel.
+   ========================================================================== */
+
+/* -- barras translúcidas só onde os dois recursos existem -- */
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))
+      and (background: color-mix(in srgb, red 50%, transparent)) {
+  .topbar {
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    backdrop-filter: saturate(180%) blur(12px);
+  }
+  .nav-mobile {
+    background: color-mix(in srgb, var(--surface-1) 94%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    backdrop-filter: saturate(180%) blur(12px);
+  }
+}
+
+/* -- toque: sem flash cinza do Android, sem espera de 300 ms, sem seleção acidental -- */
+a, button, .btn, .icon-btn, summary, label, .segmented button, .tips-dots button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+button, .btn, .icon-btn, .segmented button, .nav-mobile a, .tips-dots button {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* -- resposta ao toque, já que não existe hover -- */
+.btn:active, .icon-btn:active, .segmented button:active { transform: scale(0.98); }
+.btn:active { background: var(--surface-3); }
+.btn-primary:active { filter: brightness(0.94); }
+.nav-mobile a:active { background: var(--surface-2); }
+.tips-dots button:active::before { transform: scale(1.4); }
+.list li .icon-btn:active { background: var(--critical-soft); color: var(--critical); }
+
+/* -- hover só onde existe ponteiro de verdade -- */
+@media (hover: hover) and (pointer: fine) {
+  .icon-btn:hover { color: var(--text-1); border-color: var(--line-strong); }
+  .nav-desktop a:hover { color: var(--text-1); background: var(--surface-2); }
+  .btn:hover { background: var(--surface-3); }
+  .btn-primary:hover { filter: brightness(1.07); background: var(--accent); }
+  .btn-ghost:hover { background: var(--surface-2); color: var(--text-1); }
+  .btn-danger:hover { background: var(--critical-soft); }
+  .chart .hit:hover + .bar { filter: brightness(1.12); }
+}
+.chart .bar.is-hot { filter: brightness(1.12); }
+
+/* -- campos: o iOS descarta borda e fundo sem isto -- */
+input[type="text"], input[type="number"], input[type="date"], input[type="time"], textarea {
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="date"] { min-height: 44px; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.5; }
+
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: var(--surface-2);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%23888888' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 34px;
+}
+select::-ms-expand { display: none; }
+
+/* setinhas do input number: atrapalham mais do que ajudam nestes campos */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* -- marcador do <details> some igual nos três motores -- */
+summary { list-style: none; cursor: pointer; }
+summary::-webkit-details-marker { display: none; }
+summary::marker { content: ''; }
+
+/* -- pontinhos do carrossel com alvo de toque de verdade (eram 7x7) -- */
+.tips-dots { gap: 0; align-items: center; }
+.tips-dots button {
+  width: 15px; height: 24px;
+  display: grid; place-items: center;
+}
+.tips-dots button::before {
+  content: ''; display: block;
+  width: 7px; height: 7px; border-radius: 999px;
+  background: var(--surface-3);
+  transition: width .2s ease, background-color .2s ease, transform .12s ease;
+}
+.tips-dots button[aria-current="true"] { width: 28px; }
+.tips-dots button[aria-current="true"]::before { width: 20px; background: var(--accent); }
+
+/* o gráfico segue o dedo na horizontal sem travar a rolagem vertical da página */
+.chart { touch-action: pan-y; }
+
+/* enquanto o teclado do celular está aberto, a barra inferior sai da frente */
+.app.is-digitando .nav-mobile { display: none; }
+
+@media (max-width: 559px) {
+  .tips-foot { flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .tips-dots { order: 1; width: 100%; justify-content: center; margin-right: 0; flex-wrap: nowrap; }
+  .tips-nav { order: 2; }
+}
+
+@media (max-width: 400px) {
+  main { padding-left: 13px; padding-right: 13px; }
+  .card { padding: 14px; }
+  .tile-value { font-size: 1.25rem; }
+  .tile.hero .tile-value { font-size: 2rem; }
+  .propbar-row { grid-template-columns: minmax(84px, 40%) 1fr auto; gap: 8px; }
+  .nav-mobile a { font-size: 0.625rem; }
+}
+
+/* telas curtas de luz baixa (celular deitado no suporte da moto) */
+@media (max-height: 480px) and (orientation: landscape) {
+  .topbar { position: static; }
+  .nav-mobile { position: static; }
 }

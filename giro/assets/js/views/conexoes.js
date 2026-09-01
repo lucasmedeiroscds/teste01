@@ -4,7 +4,7 @@
 import { getState, addTurnos, exportJSON, importJSON, resetAll } from '../store.js';
 import { PLATAFORMAS, OPEN_FINANCE, nomeApp, corApp } from '../connectors/registry.js';
 import { parseCSV, sugerirMapeamento, converter, CAMPOS, turnosParaCSV } from '../connectors/csv.js';
-import { money, n0, n1, esc, icon, toast, download, todayISO, dayMonth } from '../util.js';
+import { money, n0, n1, esc, icon, toast, download, lerTexto, todayISO, dayMonth } from '../util.js';
 
 let arquivo = null;   // { nome, headers, rows, mapa, opcoes }
 
@@ -183,7 +183,7 @@ function bind(root) {
     if (!f) return;
     if (f.size > 8 * 1024 * 1024) { toast('Arquivo muito grande (máximo 8 MB).', 'error'); return; }
     try {
-      const texto = await f.text();
+      const texto = await lerTexto(f);
       const { headers, rows } = parseCSV(texto);
       if (!headers.length || !rows.length) { toast('Não encontrei linhas de dados nesse arquivo.', 'error'); return; }
       arquivo = {
@@ -220,7 +220,7 @@ function bind(root) {
     if (!f) return;
     if (!confirm('Restaurar um backup substitui todos os dados atuais. Continuar?')) { e.target.value = ''; return; }
     try {
-      importJSON(await f.text());
+      importJSON(await lerTexto(f));
       toast('Backup restaurado.', 'good');
       render(root);
     } catch (err) {

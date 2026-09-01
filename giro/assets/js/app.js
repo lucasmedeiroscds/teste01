@@ -78,6 +78,13 @@ function montarCasca() {
 
   <main id="conteudo" tabindex="-1"></main>
 
+  <footer class="foot">
+    <p><b>Giro</b> — gestão financeira para entregadores e motoristas de aplicativo.
+    Tudo roda no seu navegador: nenhum dado sai do aparelho, nenhum cadastro, nenhuma conta.</p>
+    <p>Os cálculos usam os custos que você informa. Números de referência servem de ponto de partida,
+    não de verdade absoluta — revise-os com as suas notas de posto e de oficina.</p>
+  </footer>
+
   <nav class="nav-mobile" aria-label="Seções">
     <ul>
       ${ROTAS.filter((r) => r.barra).map((r) => `
@@ -92,15 +99,21 @@ function montarCasca() {
     document.body.firstChild
   );
 
-  const rodape = el('footer', { class: 'foot', html: `
-    <p><b>Giro</b> — gestão financeira para entregadores e motoristas de aplicativo.
-    Tudo roda no seu navegador: nenhum dado sai do aparelho, nenhum cadastro, nenhuma conta.</p>
-    <p>Os cálculos usam os custos que você informa. Números de referência servem de ponto de partida, não de verdade absoluta —
-    revise-os com as suas notas de posto e de oficina.</p>
-  ` });
-  app.append(rodape);
-
   $('#btn-tema').addEventListener('click', alternarTema);
+
+  // Com o teclado do celular aberto sobra pouca tela; a barra inferior flutuando
+  // em cima dele só atrapalha quem está preenchendo um campo.
+  const digitavel = (t) => t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName);
+  document.addEventListener('focusin', (e) => {
+    if (digitavel(e.target)) app.classList.add('is-digitando');
+  });
+  document.addEventListener('focusout', (e) => {
+    if (digitavel(e.target)) {
+      setTimeout(() => {
+        if (!digitavel(document.activeElement)) app.classList.remove('is-digitando');
+      }, 60);
+    }
+  });
 }
 
 /* ---------- roteador ---------- */
@@ -117,7 +130,6 @@ function navegar() {
 
   document.title = `${rota.rotulo} · Giro`;
   document.querySelectorAll('[data-rota]').forEach((a) => {
-    a.toggleAttribute('aria-current', a.dataset.rota === rota.id);
     if (a.dataset.rota === rota.id) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   });
@@ -250,9 +262,12 @@ function abrirOnboarding() {
 function iniciar() {
   montarCasca();
   aplicarTema(getState().perfil.tema || 'auto');
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  const mqEscuro = matchMedia('(prefers-color-scheme: dark)');
+  const aoTrocarSistema = () => {
     if ((getState().perfil.tema || 'auto') === 'auto') aplicarTema('auto');
-  });
+  };
+  if (mqEscuro.addEventListener) mqEscuro.addEventListener('change', aoTrocarSistema);
+  else if (mqEscuro.addListener) mqEscuro.addListener(aoTrocarSistema);   // Safari <= 13
 
   if (!location.hash) location.replace('#/painel');
   navegar();

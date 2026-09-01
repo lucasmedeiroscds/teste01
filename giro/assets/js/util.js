@@ -190,6 +190,20 @@ export function toast(msg, kind = 'info') {
   toastTimer = setTimeout(() => { host.style.opacity = '0'; }, 3200);
 }
 
+/**
+ * Lê um arquivo escolhido pelo usuário como texto.
+ * Blob.text() só chegou no Safari 14; em iOS mais antigo cai no FileReader.
+ */
+export function lerTexto(file) {
+  if (typeof file.text === 'function') return file.text();
+  return new Promise((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(String(leitor.result || ''));
+    leitor.onerror = () => reject(leitor.error || new Error('Falha ao ler o arquivo.'));
+    leitor.readAsText(file, 'utf-8');
+  });
+}
+
 export function download(filename, content, mime = 'text/plain;charset=utf-8') {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
