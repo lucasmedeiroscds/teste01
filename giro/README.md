@@ -127,6 +127,55 @@ python3 -m http.server 8899
 Em produção é só publicar a pasta: não há passo de build, dependência ou
 processo de servidor.
 
+## Celular: Chrome, Firefox e Safari
+
+O app foi testado em viewport de celular nos três motores que importam —
+Chromium (Chrome Android), Gecko (Firefox Android) e WebKit (Safari iOS) — e
+ajustado para as diferenças reais entre eles:
+
+- **Safari.** `backdrop-filter` sem prefixo só existe a partir do Safari 18, e
+  `color-mix()` a partir do 16.2. As barras superior e inferior por isso têm
+  fundo sólido por padrão e só ficam translúcidas dentro de um `@supports` que
+  exige as duas coisas — no iOS antigo elas continuam legíveis em vez de
+  transparentes. `<select>` e campos de data recebem `appearance: none`, sem o
+  que o iOS descarta borda, fundo e cantos arredondados.
+- **Toque, nos três.** `:hover` gruda em tela de toque: o botão fica aceso
+  depois do toque. Todo `:hover` está isolado em `@media (hover: hover) and
+  (pointer: fine)` e no lugar dele o toque tem resposta em `:active`.
+- **Carrossel.** No celular, um toque disparava `pointerenter` e o `pointerleave`
+  podia nunca chegar — o cronômetro de 60 s congelava para sempre. Agora o gesto
+  do toque é outro: segurar pausa, soltar volta a contar, e **arrastar para o
+  lado troca de dica**. A pausa por foco só vale quando o foco veio do teclado
+  (`:focus-visible`), senão tocar em "próxima" travaria o rodízio.
+- **Tooltip dos gráficos.** Dependia de `pointermove`, então não existia no dedo.
+  Agora abre no toque, acompanha o arrasto e se fecha sozinho — sem fechar no
+  `pointerleave`, que no toque dispara logo depois do `pointerup`.
+- **Alvos de toque.** Os pontinhos do carrossel eram 7×7 px; hoje têm 24 px de
+  altura de área tocável com o ponto visual dentro, e ganham a linha inteira em
+  tela estreita em vez de quebrar em duas fileiras.
+- **Teclado do celular.** Com um campo em foco, a barra inferior sai da frente.
+- **Alturas.** `100dvh` com `100%` de reserva, para a barra de endereço do
+  Safari não cortar o rodapé.
+
+APIs modernas usadas com alternativa: `ResizeObserver` (cai em `resize`),
+`matchMedia.addEventListener` (cai em `addListener`, Safari ≤ 13) e
+`Blob.text()` (cai em `FileReader`, Safari ≤ 13).
+
+## Versão em arquivo único
+
+```bash
+npm i esbuild
+node giro/tools/bundle.mjs          # minificado
+node giro/tools/bundle.mjs --dev    # legível, para depurar
+```
+
+Gera `giro/dist/giro.html` — a aplicação inteira num HTML só, com CSS e
+JavaScript embutidos, cerca de 138 KB (43 KB comprimido). Serve para hospedar
+em qualquer lugar que aceite um arquivo solto, e é a única forma de abrir o app
+direto do disco, já que sem servidor os módulos ES não carregam. O
+`giro/dist/giro.body.html` é o mesmo conteúdo sem `<head>`, para plataformas que
+fornecem o próprio.
+
 ## Testes
 
 ```bash
@@ -134,10 +183,15 @@ processo de servidor.
 node giro/tests/finance.test.mjs
 node giro/tests/util.test.mjs
 
-# ponta a ponta num Chromium real
-npm i -D playwright && npx playwright install chromium
-python3 -m http.server 8899 &        # na raiz do repositório
-node giro/tests/e2e.test.mjs         # gera capturas em ./shots
+# navegador de verdade
+npm i -D playwright
+npx playwright install chromium firefox webkit
+npx playwright install-deps                 # Linux
+python3 -m http.server 8899 &               # na raiz do repositório
+
+node giro/tests/e2e.test.mjs                # fluxo completo, Chromium desktop
+node giro/tests/mobile.test.mjs             # celular nos três motores
+node giro/tests/bundle.test.mjs             # o arquivo único bate com o modular
 ```
 
 O teste ponta a ponta exercita o onboarding, o lançamento de turnos e
@@ -145,6 +199,10 @@ abastecimentos, os gráficos e seus tooltips, os três vereditos da calculadora 
 corrida, o recálculo ao vivo dos custos, o carrossel (60 s, pausa, navegação,
 reinício do cronômetro), a importação de CSV com auto-mapeamento, a persistência
 após recarregar, os dois temas e a ausência de rolagem horizontal em 390 px.
+
+O teste móvel roda em Chrome Android, Safari iOS e Firefox Android e cobre o que
+está descrito na seção acima. O de empacotamento confere que os três motores
+produzem exatamente os mesmos números a partir do arquivo único.
 
 ---
 
@@ -169,9 +227,15 @@ giro/
 │       │   └── csv.js           leitor de CSV, auto-mapeamento e conversão
 │       └── views/               painel, lancar, corrida, custos,
 │                                relatorios, conexoes, dicas
+├── tools/
+│   └── bundle.mjs               gera a versão em arquivo único
+├── dist/                        saída do empacotador
 └── tests/
-    ├── finance.test.mjs
-    └── e2e.test.mjs
+    ├── finance.test.mjs         motor de cálculo
+    ├── util.test.mjs            leitura de números digitados
+    ├── e2e.test.mjs             fluxo completo em Chromium
+    ├── mobile.test.mjs          celular nos três motores
+    └── bundle.test.mjs          paridade do arquivo único
 ```
 
 ## Dados e privacidade

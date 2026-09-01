@@ -26,6 +26,9 @@ class TipsCarousel {
     this.raf = 0;
     this.paused = false;
     this.pausedByUser = false;
+    this.hovering = false;
+    this.gesto = null;
+    this.soltarGlobal = null;
     this.host = null;
     this.root = null;
     this.onVisibility = this.onVisibility.bind(this);
@@ -52,7 +55,14 @@ class TipsCarousel {
   unmount() {
     this.stop();
     document.removeEventListener('visibilitychange', this.onVisibility);
+    if (this.soltarGlobal) {
+      document.removeEventListener('pointerup', this.soltarGlobal);
+      document.removeEventListener('pointercancel', this.soltarGlobal);
+      this.soltarGlobal = null;
+    }
     if (this.root) this.root.removeEventListener('keydown', this.onKey);
+    this.hovering = false;
+    this.gesto = null;
     this.root = null;
     this.host = null;
   }
@@ -116,10 +126,58 @@ class TipsCarousel {
       b.addEventListener('click', () => this.go(Number(b.dataset.goto)));
     });
 
-    // pausa enquanto a pessoa está lendo com o ponteiro em cima ou com foco dentro
-    r.addEventListener('pointerenter', () => this.setAutoPause(true));
-    r.addEventListener('pointerleave', () => this.setAutoPause(false));
-    r.addEventListener('focusin', () => this.setAutoPause(true));
+    // Ponteiro de verdade (mouse, trackpad): passar por cima pausa a leitura.
+    // Em tela de toque isso seria uma armadilha — pointerenter dispara no
+    // primeiro toque e pointerleave pode nunca vir, e o cronômetro ficaria
+    // parado para sempre. Lá o gesto é outro: segurar o dedo pausa, soltar
+    // volta a contar.
+    const temPonteiro = window.matchMedia
+      ? window.matchMedia('(hover: hover) and (pointer: fine)').matches
+      : true;
+
+    if (temPonteiro) {
+      r.addEventListener('pointerenter', (e) => {
+        if (e.pointerType !== 'touch') this.setAutoPause(true);
+      });
+      r.addEventListener('pointerleave', (e) => {
+        if (e.pointerType !== 'touch') this.setAutoPause(false);
+      });
+    }
+
+    r.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse') return;
+      this.setAutoPause(true);
+      this.gesto = { x: e.clientX, y: e.clientY, t: performance.now() };
+    });
+
+    // O ponteiro de toque fica capturado pelo elemento do pointerdown, então
+    // o pointerup chega aqui mesmo se o dedo saiu de cima. Ainda assim o
+    // documento ouve também: qualquer pausa por toque tem que ter fim.
+    const soltar = (e) => {
+      if (e.pointerType === 'mouse') return;
+      this.setAutoPause(false);
+      const g = this.gesto;
+      this.gesto = null;
+      if (!g || e.type !== 'pointerup') return;
+      const dx = e.clientX - g.x;
+      const dy = e.clientY - g.y;
+      if (performance.now() - g.t < 700 && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+        this.go(this.index + (dx < 0 ? 1 : -1));   // arrastar troca de dica
+      }
+    };
+    r.addEventListener('pointerup', soltar);
+    r.addEventListener('pointercancel', soltar);
+    this.soltarGlobal = (e) => { if (this.hovering) soltar(e); };
+    document.addEventListener('pointerup', this.soltarGlobal);
+    document.addEventListener('pointercancel', this.soltarGlobal);
+
+    // Foco pausa só quando veio do teclado. Num toque o botão também recebe
+    // foco, e aí "próxima dica" congelaria o rodízio.
+    r.addEventListener('focusin', (e) => {
+      let doTeclado = false;
+      try { doTeclado = e.target.matches(':focus-visible'); } catch { doTeclado = false; }
+      if (doTeclado) this.setAutoPause(true);
+    });
     r.addEventListener('focusout', (e) => {
       if (!r.contains(e.relatedTarget)) this.setAutoPause(false);
     });

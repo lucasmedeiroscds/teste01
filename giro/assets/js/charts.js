@@ -54,10 +54,59 @@ function autoRender(host, draw) {
     draw(w);
   };
   run();
-  if (host._ro) host._ro.disconnect();
-  host._ro = new ResizeObserver(() => run());
-  host._ro.observe(host);
+  if (typeof ResizeObserver === 'function') {
+    if (host._ro) host._ro.disconnect();
+    host._ro = new ResizeObserver(() => run());
+    host._ro.observe(host);
+  } else if (!host._onResize) {
+    host._onResize = () => run();
+    window.addEventListener('resize', host._onResize);
+  }
 }
+
+/**
+ * Liga o tooltip do gráfico funcionando com mouse E com dedo.
+ *
+ * No toque, pointermove sozinho não serve: só existe evento enquanto o dedo
+ * está encostado, e nada avisa quando ele sai. Então o toque abre o tooltip no
+ * pointerdown, ele acompanha o arrasto e some sozinho depois de alguns
+ * segundos. A posição é presa dentro do cartão, senão em tela estreita ele
+ * vaza pela borda.
+ */
+function ligarTooltip(svg, host, tip, conteudo) {
+  let sumir = 0;
+
+  const esconder = () => { clearTimeout(sumir); tip.classList.remove('on'); };
+
+  const mostrar = (e) => {
+    const hit = e.target.closest && e.target.closest('.hit');
+    if (!hit) { esconder(); return; }
+    const html = conteudo(Number(hit.dataset.i));
+    if (!html) { esconder(); return; }
+    tip.innerHTML = html;
+    const rect = host.getBoundingClientRect();
+    const meia = Math.min(90, rect.width / 2);
+    tip.style.left = `${clampNum(e.clientX - rect.left, meia, Math.max(meia, rect.width - meia))}px`;
+    tip.style.top = `${e.clientY - rect.top - 8}px`;
+    tip.classList.add('on');
+    clearTimeout(sumir);
+    if (e.pointerType === 'touch') sumir = setTimeout(esconder, 2800);
+  };
+
+  svg.addEventListener('pointerdown', mostrar);
+  svg.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch' && !e.buttons) return;   // dedo já saiu
+    mostrar(e);
+  });
+  // No toque, o ponteiro deixa de existir assim que o dedo sai, e o navegador
+  // dispara pointerleave logo depois do pointerup — fechar aqui apagaria o
+  // tooltip no mesmo instante em que ele abriu. Quem fecha nesse caso é o
+  // cronômetro de alguns segundos.
+  svg.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch') esconder(); });
+  svg.addEventListener('pointercancel', esconder);
+}
+
+const clampNum = (v, min, max) => Math.min(max, Math.max(min, v));
 
 /* ==========================================================================
    1. Colunas: resultado por dia
@@ -126,21 +175,14 @@ export function colunasDiarias(host, dados) {
     host.querySelector('svg')?.remove();
     host.insertAdjacentHTML('afterbegin', parts.join(''));
 
-    const svg = host.querySelector('svg');
-    svg.addEventListener('pointermove', (e) => {
-      const hit = e.target.closest('.hit');
-      if (!hit) { tip.classList.remove('on'); return; }
-      const d = dados[Number(hit.dataset.i)];
-      const rect = host.getBoundingClientRect();
-      tip.innerHTML = `<b>${weekdayShort(d.data)} ${dayMonth(d.data)}</b>
+    ligarTooltip(host.querySelector('svg'), host, tip, (i) => {
+      const d = dados[i];
+      if (!d) return '';
+      return `<b>${weekdayShort(d.data)} ${dayMonth(d.data)}</b>
         <div class="r"><span>Bruto</span><span>${money(d.bruto)}</span></div>
         <div class="r"><span>Líquido</span><span>${money(d.liquido)}</span></div>
         <div class="r"><span>Km</span><span>${n0(d.km)}</span></div>`;
-      tip.style.left = `${e.clientX - rect.left}px`;
-      tip.style.top = `${e.clientY - rect.top - 8}px`;
-      tip.classList.add('on');
     });
-    svg.addEventListener('pointerleave', () => tip.classList.remove('on'));
   });
 }
 
@@ -183,20 +225,14 @@ export function barrasPorApp(host, linhas) {
     host.querySelector('svg')?.remove();
     host.insertAdjacentHTML('afterbegin', parts.join(''));
 
-    const svg = host.querySelector('svg');
-    svg.addEventListener('pointermove', (e) => {
-      const hit = e.target.closest('.hit');
-      if (!hit) { tip.classList.remove('on'); return; }
-      const l = linhas[Number(hit.dataset.i)];
-      const rect = host.getBoundingClientRect();
-      tip.innerHTML = `<b>${esc(l.rotulo)}</b>
+    ligarTooltip(host.querySelector('svg'), host, tip, (i) => {
+      const l = linhas[i];
+      if (!l) return '';
+      const [rotuloSub, valorSub] = String(l.sub || '').split('·');
+      return `<b>${esc(l.rotulo)}</b>
         <div class="r"><span>Bruto</span><span>${money(l.valor)}</span></div>
-        ${l.sub ? `<div class="r"><span>${esc(l.sub.split('·')[0].trim())}</span><span>${esc((l.sub.split('·')[1] || '').trim())}</span></div>` : ''}`;
-      tip.style.left = `${e.clientX - rect.left}px`;
-      tip.style.top = `${e.clientY - rect.top - 8}px`;
-      tip.classList.add('on');
+        ${l.sub ? `<div class="r"><span>${esc(rotuloSub.trim())}</span><span>${esc((valorSub || '').trim())}</span></div>` : ''}`;
     });
-    svg.addEventListener('pointerleave', () => tip.classList.remove('on'));
   });
 }
 
