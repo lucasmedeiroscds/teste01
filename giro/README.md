@@ -76,6 +76,43 @@ exportação em CSV.
 **Dicas** — carrossel com 16 dicas de gestão financeira, **uma por vez, 60
 segundos de tela cada**, mais o texto completo de todas para ler de uma vez.
 
+## O que o app faz para se explicar sozinho
+
+Ninguém lê manual de aplicativo. Estas quatro coisas existem para o Giro ser
+entendido de relance:
+
+**Dados de exemplo com um toque.** Quem abre pela primeira vez vê zeros — e para
+descobrir o que o app faz, precisaria antes digitar. O botão do estado vazio
+enche a tela com um mês fictício de trabalho: gráficos, custos, provisões,
+tudo funcionando. Enquanto o exemplo está ligado há uma faixa fixa avisando, e o
+seu primeiro lançamento de verdade apaga o exemplo inteiro antes de gravar, para
+nunca haver número de brincadeira misturado com o seu.
+
+**Comparação com o passado.** "R$ 187 na semana" não diz se foi bom. Ao lado do
+número aparece a variação contra a referência certa — e a referência acompanha o
+ciclo do período, não os dias corridos: hoje contra o mesmo dia da semana
+passada, a semana contra a semana anterior, o mês contra o mesmo intervalo do
+mês passado. Comparar terça-feira com domingo mostraria uma queda que é do
+calendário, não sua. Sem base suficiente dos dois lados, nenhuma seta aparece;
+e variação acima do dobro vira multiplicador (`3,5x`), porque `248%` obriga o
+leitor a fazer conta.
+
+**Leitura em português embaixo do número.** `R$ 0,49/km` não significa nada
+sozinho; `Rodar 100 km custa R$ 48,72, mesmo sem receber nada` significa. Cada
+cartão principal traz essa linha.
+
+**Primeiros passos que se marcam sozinhos.** O estado vazio é uma lista de três
+etapas que vão sendo riscadas conforme a pessoa configura os custos e lança o
+primeiro dia.
+
+## Movimento
+
+A animação existe para explicar, não para enfeitar: o número sobe contando
+porque é um acumulado, a barra cresce a partir da linha de base porque é dali
+que ela é medida, a tela entra deslizando porque você mudou de lugar. Nada passa
+de meio segundo, nada fica em laço, e tudo é desligado por completo em
+`prefers-reduced-motion` — verificado em teste.
+
 ---
 
 ## O modelo de custo
@@ -179,9 +216,10 @@ fornecem o próprio.
 ## Testes
 
 ```bash
-# motor de cálculo e leitura de números (só Node, sem dependências)
-node giro/tests/finance.test.mjs
-node giro/tests/util.test.mjs
+# funções puras (só Node, sem dependências)
+node giro/tests/finance.test.mjs      # motor de cálculo
+node giro/tests/util.test.mjs         # leitura de números digitados
+node giro/tests/periodo.test.mjs      # janelas de período e comparação
 
 # navegador de verdade
 npm i -D playwright
@@ -190,6 +228,7 @@ npx playwright install-deps                 # Linux
 python3 -m http.server 8899 &               # na raiz do repositório
 
 node giro/tests/e2e.test.mjs                # fluxo completo, Chromium desktop
+node giro/tests/interacao.test.mjs          # exemplo, comparação, animação, atalhos
 node giro/tests/mobile.test.mjs             # celular nos três motores
 node giro/tests/bundle.test.mjs             # o arquivo único bate com o modular
 ```
@@ -216,6 +255,8 @@ giro/
 │   └── js/
 │       ├── app.js               casca, rotas, tema, primeira configuração
 │       ├── store.js             estado + persistência em localStorage
+│       ├── demo.js              mês de exemplo, isolado dos dados reais
+│       ├── anim.js              contagem de números e entradas curtas
 │       ├── finance.js           motor de cálculo (funções puras)
 │       ├── charts.js            gráficos em SVG, sem biblioteca
 │       ├── carousel.js          carrossel de dicas, 60 s por dica
@@ -233,7 +274,9 @@ giro/
 └── tests/
     ├── finance.test.mjs         motor de cálculo
     ├── util.test.mjs            leitura de números digitados
+    ├── periodo.test.mjs         janelas de período e comparação
     ├── e2e.test.mjs             fluxo completo em Chromium
+    ├── interacao.test.mjs       exemplo, comparação, animação, atalhos
     ├── mobile.test.mjs          celular nos três motores
     └── bundle.test.mjs          paridade do arquivo único
 ```

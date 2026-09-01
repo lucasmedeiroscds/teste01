@@ -7,7 +7,7 @@
  * disponível para quem não distingue as cores.
  */
 
-import { money, money0, n0, n1, dayMonth, weekdayShort, esc, el } from './util.js';
+import { money, money0, n0, dayMonth, weekdayShort, esc, el } from './util.js';
 
 const SERIES_VARS = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6'];
 export const seriesColor = (i) => `var(${SERIES_VARS[i % SERIES_VARS.length]})`;
@@ -76,13 +76,24 @@ function autoRender(host, draw) {
 function ligarTooltip(svg, host, tip, conteudo) {
   let sumir = 0;
 
-  const esconder = () => { clearTimeout(sumir); tip.classList.remove('on'); };
+  // O destaque acompanha o tooltip em vez de depender de :hover no SVG — assim
+  // ele também funciona no dedo, e não depende da ordem dos nós no desenho.
+  const destacar = (i) => {
+    svg.querySelectorAll('.bar.is-hot').forEach((b) => b.classList.remove('is-hot'));
+    if (i == null) return;
+    const alvo = svg.querySelector(`[data-barra="${i}"] .bar`);
+    if (alvo) alvo.classList.add('is-hot');
+  };
+
+  const esconder = () => { clearTimeout(sumir); tip.classList.remove('on'); destacar(null); };
 
   const mostrar = (e) => {
     const hit = e.target.closest && e.target.closest('.hit');
     if (!hit) { esconder(); return; }
-    const html = conteudo(Number(hit.dataset.i));
+    const i = Number(hit.dataset.i);
+    const html = conteudo(i);
     if (!html) { esconder(); return; }
+    destacar(i);
     tip.innerHTML = html;
     const rect = host.getBoundingClientRect();
     const meia = Math.min(90, rect.width / 2);
@@ -160,7 +171,9 @@ export function colunasDiarias(host, dados) {
       const fill = d.vazio ? 'var(--surface-3)' : neg ? 'var(--critical)' : 'var(--accent)';
       const hEff = Math.max(h, d.vazio ? 2 : 1.5);
       const yEff = neg ? zeroY : zeroY - hEff;
-      parts.push(`<path class="bar" d="${capPath(x, yEff, barW, hEff, 4, neg ? 'bottom' : 'top')}" fill="${fill}"/>`);
+      // cresce a partir do zero: a animação mostra de onde a barra é medida
+      parts.push(`<g class="bar-in" data-barra="${i}" style="transform-origin:${cx.toFixed(1)}px ${zeroY.toFixed(1)}px;animation-delay:${Math.min(i * 26, 340)}ms">`
+        + `<path class="bar" d="${capPath(x, yEff, barW, hEff, 4, neg ? 'bottom' : 'top')}" fill="${fill}"/></g>`);
 
       if (i === maxIdx && v > 0 && !d.vazio) {
         parts.push(`<text class="lbl-strong" x="${cx.toFixed(1)}" y="${(yEff - 6).toFixed(1)}" text-anchor="middle">${money0(v)}</text>`);
@@ -216,7 +229,8 @@ export function barrasPorApp(host, linhas) {
       const w = Math.max(3, (l.valor / max) * plotW);
       const cy = y + rowH / 2 - 3;
       parts.push(`<text class="lbl" x="0" y="${(cy + 4).toFixed(1)}">${esc(l.rotulo)}</text>`);
-      parts.push(`<path class="bar" d="${capPath(labelW, cy - barH / 2, w, barH, 4, 'right')}" fill="${l.cor}"/>`);
+      parts.push(`<g class="bar-in-x" data-barra="${i}" style="transform-origin:${labelW}px ${cy.toFixed(1)}px;animation-delay:${Math.min(i * 60, 300)}ms">`
+        + `<path class="bar" d="${capPath(labelW, cy - barH / 2, w, barH, 4, 'right')}" fill="${l.cor}"/></g>`);
       parts.push(`<text class="lbl-strong" x="${(labelW + w + 8).toFixed(1)}" y="${(cy + 4).toFixed(1)}">${money0(l.valor)}</text>`);
       parts.push(`<rect class="hit" x="0" y="${y}" width="${W}" height="${rowH}" data-i="${i}"/>`);
     });

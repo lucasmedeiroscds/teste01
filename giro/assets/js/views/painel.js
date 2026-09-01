@@ -2,19 +2,93 @@
 
 import { getState, setPeriodo } from '../store.js';
 import { resumo, agrupar, serieDiaria, pontoEquilibrio, provisoes, custoVariavelKm } from '../finance.js';
-import { faixa, noPeriodo, datasDoGrafico, PERIODOS } from '../periodo.js';
+import { faixa, faixaAnterior, noPeriodo, datasDoGrafico, PERIODOS, variacao } from '../periodo.js';
 import {
   colunasDiarias, barrasPorApp, barrasProporcionais, legenda, tabelaEquivalente,
 } from '../charts.js';
 import { corApp, nomeApp } from '../connectors/registry.js';
 import { carousel } from '../carousel.js';
-import { money, money0, n0, pct, esc, icon, hoursToLabel, dayMonth, safeDiv } from '../util.js';
+import { money, money0, n0, n1, esc, icon, toast, hoursToLabel, dayMonth, safeDiv } from '../util.js';
+import { animarValores, escalonar } from '../anim.js';
+import { podeOferecerExemplo, ativarExemplo } from '../demo.js';
 
-function tile({ label, valor, nota, cls = '', hero = false }) {
-  return `<div class="tile${hero ? ' hero' : ''}">
+const SETA_CIMA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+const SETA_BAIXO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>';
+
+/**
+ * Selo de variação contra o mesmo período anterior.
+ * `subirEBom` inverte a leitura para as métricas em que subir é ruim (custo).
+ */
+function delta(v, { subirEBom = true, rotulo = 'o período anterior' } = {}) {
+  if (v == null || !Number.isFinite(v)) return '';
+  if (Math.abs(v) < 0.005) return `<span class="delta" title="igual ${esc(rotulo)}">estável</span>`;
+  const subiu = v > 0;
+  const bom = subiu === subirEBom;
+  const classe = `${subiu ? 'subiu' : 'caiu'}-${bom ? 'bom' : 'ruim'}`;
+  // Dobrou para cima já não se lê bem em porcentagem: "248%" exige conta na
+  // cabeça, "2,5x" não. Abaixo disso a porcentagem continua sendo o natural.
+  const mag = Math.abs(v);
+  const texto = mag >= 1 ? `${n1(1 + mag)}x` : `${(mag * 100).toFixed(0)}%`;
+  return `<span class="delta ${classe}" title="${subiu ? 'acima' : 'abaixo'} do ${esc(rotulo)}">`
+    + `${subiu ? SETA_CIMA : SETA_BAIXO}${texto}</span>`;
+}
+
+/**
+ * @param {object} o
+ * @param {number} o.bruto  valor cru, para a contagem animada
+ * @param {string} o.fmt    nome do formatador registrado em FORMATOS
+ */
+function tile({ label, bruto, fmt = 'moeda', nota, variacaoHTML = '', leitura = '', cls = '', hero = false, i = 0 }) {
+  return `<div class="tile${hero ? ' hero' : ''}" style="animation-delay:${escalonar(i, 40, 260)}ms">
     <span class="tile-label">${esc(label)}</span>
-    <span class="tile-value ${cls}">${valor}</span>
-    ${nota ? `<span class="tile-note">${nota}</span>` : ''}
+    <span class="tile-value ${cls}" data-anima="${fmt}" data-bruto="${bruto}">${FORMATOS[fmt](bruto)}</span>
+    ${nota || variacaoHTML ? `<span class="tile-note">${variacaoHTML}${variacaoHTML && nota ? ' · ' : ''}${nota || ''}</span>` : ''}
+    ${leitura ? `<span class="leitura">${leitura}</span>` : ''}
+  </div>`;
+}
+
+/** Formatadores usados pela contagem animada. */
+const FORMATOS = {
+  moeda: (v) => money(v),
+  moeda0: (v) => money0(v),
+  inteiro: (v) => n0(v),
+  decimal: (v) => n1(v),
+};
+
+const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>';
+
+/**
+ * Estado vazio que se resolve enquanto a pessoa usa: cada passo se marca
+ * sozinho quando fica pronto, então o cartão vira um progresso em vez de um
+ * texto que ninguém lê duas vezes.
+ */
+function primeirosPassos(s) {
+  const custosProntos = (s.custosFixos || []).some((c) => Number(c.valorMes) > 0)
+    || Number(s.perfil.consumoKmL) > 0;
+  const passos = [
+    { feito: custosProntos, titulo: 'Diga quanto custa rodar', sub: 'veículo, combustível e contas do mês', acao: '#/custos', rotulo: 'Configurar' },
+    { feito: s.turnos.length > 0, titulo: 'Lance o primeiro dia', sub: 'bruto, quilômetros e horas — vinte segundos', acao: '#/lancar', rotulo: 'Lançar' },
+    { feito: false, titulo: 'Veja o que sobrou de verdade', sub: 'o painel se preenche sozinho a partir daí', acao: null },
+  ];
+
+  return `<div class="card">
+    <h2>Três passos e o painel ganha vida</h2>
+    <p class="muted small" style="margin-top:6px">Sem saber o custo do quilômetro, qualquer número de ganho é chute. Se preferir ver funcionando antes de digitar, carregue um mês de exemplo.</p>
+    <ol class="passos">
+      ${passos.map((p, i) => `<li class="passo${p.feito ? ' feito' : ''}">
+        <span class="passo-marca">${p.feito ? CHECK : i + 1}</span>
+        <span>
+          <span class="passo-titulo">${esc(p.titulo)}</span>
+          <span class="passo-sub" style="display:block">${esc(p.sub)}</span>
+        </span>
+        ${p.acao && !p.feito ? `<a class="btn btn-sm btn-ghost" href="${p.acao}">${esc(p.rotulo)}</a>` : '<span></span>'}
+      </li>`).join('')}
+    </ol>
+    ${podeOferecerExemplo(s) ? `
+      <button class="btn btn-primary btn-block" data-exemplo style="margin-top:14px">
+        ${icon('play')} Ver funcionando com dados de exemplo
+      </button>
+      <p class="tiny dim center" style="margin-top:8px">Um mês fictício de trabalho. Sai com um toque, sem deixar rastro.</p>` : ''}
   </div>`;
 }
 
@@ -30,6 +104,18 @@ export function render(root) {
   const apps = agrupar(turnos, 'app');
   const datas = datasDoGrafico(pid);
   const serie = serieDiaria(s, s.turnos, datas);
+
+  const fAnt = faixaAnterior(f, pid);
+  const rAnt = resumo(s, noPeriodo(s.turnos, fAnt), fAnt.diasCorridos);
+  // Um ou dois dias trabalhados de cada lado não sustentam uma comparação:
+  // no começo da semana ou do mês a seta diria mais sobre o calendário do que
+  // sobre o trabalho. Sem base suficiente, nenhum selo aparece.
+  const minDias = pid === 'hoje' ? 1 : 2;
+  const houveAnterior = rAnt.bruto > 0
+    && rAnt.diasTrabalhados >= minDias
+    && r.diasTrabalhados >= minDias;
+  const varDe = (atual, anterior) => (houveAnterior ? variacao(atual, anterior) : null);
+  const refComparacao = fAnt.rotulo;
 
   const semDados = s.turnos.length === 0;
   const semDadosNoPeriodo = turnos.length === 0;
@@ -63,31 +149,52 @@ export function render(root) {
       <h1>Painel</h1>
       ${seletor}
     </div>
-    <p class="small dim" style="margin-top:6px">${esc(f.rotulo)} · ${r.diasTrabalhados} dia(s) rodados · ${n0(r.km)} km · ${hoursToLabel(r.horas)}</p>
+    <p class="small dim" style="margin-top:6px">
+      ${esc(f.rotulo)} · ${r.diasTrabalhados} dia(s) rodados · ${n0(r.km)} km · ${hoursToLabel(r.horas)}
+      ${houveAnterior ? `<br>as setas comparam com <b>${esc(refComparacao)}</b>` : ''}
+    </p>
   </div>
 
-  ${semDados ? `
-    <div class="card">
-      <h2>Comece pelo custo, não pelo ganho</h2>
-      <p class="muted small" style="margin-top:6px">Sem saber quanto custa cada quilômetro, qualquer número de ganho é chute. Leva dois minutos: confira o veículo e os custos fixos, depois lance o primeiro dia.</p>
-      <div class="row" style="margin-top:14px">
-        <a class="btn btn-primary" href="#/custos">${icon('gear')} Configurar custos</a>
-        <a class="btn btn-ghost" href="#/lancar">${icon('plus')} Lançar um dia</a>
-      </div>
-    </div>` : ''}
+  ${semDados ? primeirosPassos(s) : ''}
 
   <div class="tiles" style="margin-bottom:14px">
     ${tile({
       label: `Sobrou ${pid === 'hoje' ? 'hoje' : `n${pid === 'mes' ? 'o mês' : 'a semana'}`}`,
-      valor: money(r.liquido),
+      bruto: r.liquido,
       cls: r.liquido < 0 ? 'is-neg' : r.liquido > 0 ? 'is-pos' : '',
-      nota: r.bruto > 0 ? `de ${money(r.bruto)} brutos · margem ${pct(r.margem)}` : 'nenhum lançamento no período',
-      hero: true,
+      variacaoHTML: delta(varDe(r.liquido, rAnt.liquido), { rotulo: refComparacao }),
+      nota: r.bruto > 0 ? `de ${money(r.bruto)} brutos` : 'nenhum lançamento no período',
+      leitura: r.bruto > 0
+        ? `De cada <b>R$ 10</b> que entraram, <b>${money(r.margem * 10)}</b> ficaram com você.`
+        : '',
+      hero: true, i: 0,
     })}
-    ${tile({ label: 'Por hora, líquido', valor: money(r.liquidoPorHora), nota: `bruto ${money(r.brutoPorHora)}/h` })}
-    ${tile({ label: 'Por km, líquido', valor: money(r.liquidoPorKm), nota: `bruto ${money(r.brutoPorKm)}/km` })}
-    ${tile({ label: 'Custo por km', valor: money(cv.total), nota: `combustível ${money(cv.combustivel)} · resto ${money(cv.manutencao + cv.depreciacao)}` })}
-    ${tile({ label: 'Custo do período', valor: money(r.custoTotal), nota: `fixos ${money(r.custoFixo)} · variáveis ${money(r.custoVariavel)}` })}
+    ${tile({
+      label: 'Por hora, líquido', bruto: r.liquidoPorHora,
+      variacaoHTML: delta(varDe(r.liquidoPorHora, rAnt.liquidoPorHora), { rotulo: refComparacao }),
+      nota: `bruto ${money(r.brutoPorHora)}/h`,
+      leitura: r.horas > 0 ? `Um turno de <b>8 h</b> nesse ritmo deixa <b>${money(r.liquidoPorHora * 8)}</b>.` : '',
+      i: 1,
+    })}
+    ${tile({
+      label: 'Por km, líquido', bruto: r.liquidoPorKm,
+      variacaoHTML: delta(varDe(r.liquidoPorKm, rAnt.liquidoPorKm), { rotulo: refComparacao }),
+      nota: `bruto ${money(r.brutoPorKm)}/km`,
+      leitura: r.km > 0 ? `A cada <b>100 km</b> rodados sobram <b>${money(r.liquidoPorKm * 100)}</b>.` : '',
+      i: 2,
+    })}
+    ${tile({
+      label: 'Custo por km', bruto: cv.total,
+      nota: `combustível ${money(cv.combustivel)} · resto ${money(cv.manutencao + cv.depreciacao)}`,
+      leitura: `Rodar <b>100 km</b> custa <b>${money(cv.total * 100)}</b>, mesmo sem receber nada.`,
+      i: 3,
+    })}
+    ${tile({
+      label: 'Custo do período', bruto: r.custoTotal,
+      variacaoHTML: delta(varDe(r.custoTotal, rAnt.custoTotal), { subirEBom: false, rotulo: refComparacao }),
+      nota: `fixos ${money(r.custoFixo)} · variáveis ${money(r.custoVariavel)}`,
+      i: 4,
+    })}
   </div>
 
   ${metaMes > 0 ? `
@@ -217,6 +324,12 @@ export function render(root) {
   const hostApps = root.querySelector('[data-chart-apps]');
   if (hostApps && linhasApp.length) barrasPorApp(hostApps, linhasApp);
 
+  root.querySelector('[data-exemplo]')?.addEventListener('click', () => {
+    ativarExemplo();
+    toast('Dados de exemplo carregados. Explore à vontade.', 'good');
+  });
+
+  animarValores(root, FORMATOS);
   carousel.mount(root.querySelector('[data-carousel]'));
 }
 

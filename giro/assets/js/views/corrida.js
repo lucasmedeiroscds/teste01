@@ -5,10 +5,14 @@ import { getState, update } from '../store.js';
 import { avaliarCorrida, custoVariavelKm, custoFixoPorHora } from '../finance.js';
 import { money, n1, n0, parseNum, safeDiv } from '../util.js';
 
+const SIM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>';
+const TALVEZ = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v5M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>';
+const NAO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+
 const VEREDITOS = {
-  boa:    { rotulo: 'Vale a pena', badge: 'badge-good',     nota: 'note-good',     texto: 'Paga os custos e ainda entrega o seu R$ por hora alvo.' },
-  limite: { rotulo: 'No limite',   badge: 'badge-warning',  nota: 'note-warning',  texto: 'Sobra alguma coisa, mas abaixo do que você definiu como mínimo por hora. Aceite só se estiver parado ou se for na direção de casa.' },
-  ruim:   { rotulo: 'Não vale',    badge: 'badge-critical', nota: 'note-critical', texto: 'Depois de combustível, desgaste e a fatia de custo fixo do tempo gasto, essa corrida sai do seu bolso.' },
+  boa:    { rotulo: 'Vale a pena', icone: SIM,    nota: 'note-good',    texto: 'Paga os custos e ainda entrega o seu R$ por hora alvo.' },
+  limite: { rotulo: 'No limite',   icone: TALVEZ, nota: 'note-warning', texto: 'Sobra alguma coisa, mas abaixo do que você definiu como mínimo por hora. Aceite só se estiver parado ou se for na direção de casa.' },
+  ruim:   { rotulo: 'Não vale',    icone: NAO,    nota: 'note-critical', texto: 'Depois de combustível, desgaste e a fatia de custo fixo do tempo gasto, essa corrida sai do seu bolso.' },
 };
 
 const entrada = { valor: '', kmColeta: '', kmEntrega: '', kmRetorno: '', minutos: '', contarRetorno: true };
@@ -30,6 +34,9 @@ export function render(root) {
       <div class="input-affix"><span>R$</span>
         <input type="text" inputmode="decimal" id="c-valor" placeholder="0,00" autocomplete="off">
       </div>
+      <div class="chips" role="group" aria-label="Valores usados com frequência">
+        ${[6, 8, 10, 13, 16, 22].map((v) => `<button type="button" data-chip="c-valor" data-valor="${v}">R$ ${v}</button>`).join('')}
+      </div>
     </div>
 
     <div class="fields-2">
@@ -45,6 +52,10 @@ export function render(root) {
           <input type="text" inputmode="decimal" id="c-entrega" placeholder="0" autocomplete="off">
         </div>
       </div>
+    </div>
+
+    <div class="chips" role="group" aria-label="Distâncias usadas com frequência" style="margin:-4px 0 12px">
+      ${[2, 3, 5, 8, 12].map((v) => `<button type="button" data-chip="c-entrega" data-valor="${v}">${v} km</button>`).join('')}
     </div>
 
     <div class="checkline">
@@ -147,9 +158,13 @@ export function render(root) {
     const v = VEREDITOS[a.veredito];
 
     out.innerHTML = `
-      <div class="card-head">
-        <h2>${money(a.liquido)} de sobra</h2>
-        <span class="badge ${v.badge}">${v.rotulo}</span>
+      <div class="veredito ${a.veredito}">
+        <span class="veredito-icone">${v.icone}</span>
+        <span>
+          <span class="veredito-rotulo">${v.rotulo}</span>
+          <span class="veredito-valor" style="display:block">${money(a.liquido)}</span>
+          <span class="small muted">de sobra depois de tudo</span>
+        </span>
       </div>
       <div class="tiles">
         <div class="tile"><span class="tile-label">Por hora, líquido</span><span class="tile-value ${a.liquidoPorHora < a.metaHora ? 'is-neg' : 'is-pos'}">${money(a.liquidoPorHora)}</span><span class="tile-note">seu piso: ${money(a.metaHora)}/h</span></div>
@@ -171,13 +186,31 @@ export function render(root) {
       </div>`;
   }
 
-  form.addEventListener('input', calcular);
+  root.querySelectorAll('[data-chip]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const campo = el(`#${b.dataset.chip}`);
+      campo.value = String(b.dataset.valor).replace('.', ',');
+      calcular();
+      marcarChips();
+    });
+  });
+
+  /** Deixa aceso o atalho que corresponde ao valor digitado. */
+  function marcarChips() {
+    root.querySelectorAll('[data-chip]').forEach((b) => {
+      const atual = parseNum(el(`#${b.dataset.chip}`).value);
+      b.setAttribute('aria-pressed', String(Math.abs(atual - Number(b.dataset.valor)) < 0.005));
+    });
+  }
+
+  form.addEventListener('input', () => { calcular(); marcarChips(); });
   el('#c-retorno').addEventListener('change', calcular);
   el('#c-metahora').addEventListener('input', (e) => {
     update((st) => { st.metas.ganhoHoraMin = parseNum(e.target.value); }, { silent: true });
     calcular();
   });
   calcular();
+  marcarChips();
 }
 
 export const meta = { titulo: 'Vale a pena?' };

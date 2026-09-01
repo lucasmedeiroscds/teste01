@@ -162,7 +162,7 @@ a { color: var(--accent); text-underline-offset: 2px; }
   min-height: 100%;
   min-height: 100dvh;
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto auto 1fr auto auto;
   /* sem isto, uma tabela larga faz a coluna implícita do grid estourar e
      arrasta a página inteira para a rolagem horizontal */
   grid-template-columns: minmax(0, 1fr);
@@ -640,7 +640,6 @@ button, .btn, .icon-btn, .segmented button, .nav-mobile a, .tips-dots button {
   .btn-primary:hover { filter: brightness(1.07); background: var(--accent); }
   .btn-ghost:hover { background: var(--surface-2); color: var(--text-1); }
   .btn-danger:hover { background: var(--critical-soft); }
-  .chart .hit:hover + .bar { filter: brightness(1.12); }
 }
 .chart .bar.is-hot { filter: brightness(1.12); }
 
@@ -715,4 +714,129 @@ summary::marker { content: ''; }
 @media (max-height: 480px) and (orientation: landscape) {
   .topbar { position: static; }
   .nav-mobile { position: static; }
+}
+
+/* ==========================================================================
+   17. Movimento e leitura rápida
+   --------------------------------------------------------------------------
+   Tudo aqui existe para o app responder e para o número se explicar sozinho.
+   Nada dura mais que meio segundo, nada fica em laço, e o bloco inteiro é
+   desligado por prefers-reduced-motion no fim da folha.
+   ========================================================================== */
+
+/* barras crescendo de onde são medidas */
+@keyframes barraSobe   { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes barraCresce { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.chart .bar-in   { animation: barraSobe .42s cubic-bezier(.22, .8, .3, 1) both; }
+.chart .bar-in-x { animation: barraCresce .45s cubic-bezier(.22, .8, .3, 1) both; }
+.chart .bar { transition: filter .12s ease; }
+
+/* entrada da tela ao trocar de rota */
+@keyframes telaEntra { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.entrando { animation: telaEntra .26s cubic-bezier(.22, .8, .3, 1) both; }
+
+/* um valor que mudou por causa de outra coisa que a pessoa fez */
+@keyframes pisca {
+  0%   { background: var(--accent-soft); box-shadow: 0 0 0 4px var(--accent-soft); }
+  100% { background: transparent; box-shadow: 0 0 0 4px transparent; }
+}
+.piscou { animation: pisca .75s ease-out both; border-radius: 5px; }
+
+/* entrada escalonada dos cartões de número */
+@keyframes tileEntra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.tiles .tile { animation: tileEntra .3s cubic-bezier(.22, .8, .3, 1) both; }
+
+/* ---------- variação contra o período anterior ---------- */
+.delta {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--font-num); font-size: 0.6875rem; font-weight: 700;
+  padding: 2px 6px; border-radius: 999px; white-space: nowrap;
+  background: var(--surface-2); color: var(--text-2);
+}
+.delta.subiu-bom, .delta.caiu-bom     { background: var(--good-soft); color: var(--good); }
+.delta.subiu-ruim, .delta.caiu-ruim   { background: var(--critical-soft); color: var(--critical); }
+.delta svg { width: 10px; height: 10px; }
+
+/* ---------- leitura em português do número acima ---------- */
+.leitura {
+  font-size: 0.75rem; color: var(--text-2); line-height: 1.4;
+  border-top: 1px dashed var(--line); padding-top: 7px; margin-top: 7px;
+}
+.leitura b { color: var(--text-1); font-weight: 650; }
+
+/* ---------- faixa de dados de exemplo ---------- */
+.faixa-exemplo {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 16px;
+  background: var(--warning-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  font-size: 0.8125rem; color: var(--text-1);
+}
+@supports not (background: color-mix(in srgb, red 50%, transparent)) {
+  .faixa-exemplo { border-bottom: 1px solid var(--line-strong); }
+}
+.faixa-exemplo b { font-weight: 700; }
+.faixa-exemplo .btn { margin-left: auto; }
+
+/* ---------- primeiros passos ---------- */
+.passos { display: grid; gap: 2px; margin: 14px 0 0; padding: 0; list-style: none; counter-reset: passo; }
+.passo {
+  display: grid; grid-template-columns: 26px 1fr auto; gap: 11px; align-items: center;
+  padding: 12px 4px; border-bottom: 1px solid var(--line);
+}
+.passo:last-child { border-bottom: 0; }
+.passo-marca {
+  width: 26px; height: 26px; border-radius: 999px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--line-strong); color: var(--text-3);
+  font-family: var(--font-num); font-size: 0.75rem; font-weight: 700;
+}
+.passo-marca svg { width: 14px; height: 14px; }
+.passo.feito .passo-marca { background: var(--good); border-color: var(--good); color: #fff; }
+.passo.feito .passo-titulo { color: var(--text-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+.passo-titulo { font-weight: 600; font-size: 0.9375rem; }
+.passo-sub { font-size: 0.75rem; color: var(--text-3); }
+
+/* ---------- valores rápidos ---------- */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.chips button {
+  appearance: none; cursor: pointer; font: inherit;
+  font-family: var(--font-num); font-size: 0.8125rem; font-weight: 600;
+  padding: 7px 12px; min-height: 36px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface-2); color: var(--text-2);
+}
+.chips button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chips button:active { transform: scale(0.96); }
+
+/* ---------- veredito grande da calculadora ---------- */
+.veredito {
+  display: grid; grid-template-columns: 44px 1fr; gap: 13px; align-items: center;
+  padding: 15px; border-radius: var(--radius); margin-bottom: 14px;
+}
+.veredito-icone {
+  width: 44px; height: 44px; border-radius: 999px;
+  display: grid; place-items: center; color: #fff;
+}
+.veredito-icone svg { width: 24px; height: 24px; stroke-width: 2.4; }
+.veredito-valor { font-family: var(--font-num); font-size: 1.75rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
+.veredito-rotulo { font-size: 0.8125rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.veredito.boa    { background: var(--good-soft); }
+.veredito.boa    .veredito-icone { background: var(--good); }
+.veredito.boa    .veredito-rotulo { color: var(--good); }
+.veredito.limite { background: var(--warning-soft); }
+.veredito.limite .veredito-icone { background: var(--warning); color: #3d2c00; }
+.veredito.limite .veredito-rotulo { color: #8a6000; }
+.veredito.ruim   { background: var(--critical-soft); }
+.veredito.ruim   .veredito-icone { background: var(--critical); }
+.veredito.ruim   .veredito-rotulo { color: var(--critical); }
+:root[data-theme="dark"] .veredito.limite .veredito-rotulo { color: var(--warning); }
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .veredito.limite .veredito-rotulo { color: var(--warning); }
+}
+
+/* ---------- quem pediu menos movimento não recebe nenhum ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .chart .bar-in, .chart .bar-in-x, .entrando, .piscou, .tiles .tile { animation: none !important; }
+  .chips button:active, .btn:active, .icon-btn:active, .segmented button:active { transform: none; }
 }

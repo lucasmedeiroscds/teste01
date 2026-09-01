@@ -14,6 +14,21 @@ const URL_BUNDLE = process.env.GIRO_BUNDLE_URL || 'http://127.0.0.1:8899/giro/di
 const problemas = [];
 const resultados = [];
 
+/** Espera o texto parar de mudar — os números do painel entram contando. */
+async function textoEstavel(page, seletor, timeout = 4000) {
+  const fim = Date.now() + timeout;
+  let anterior = null;
+  let iguais = 0;
+  while (Date.now() < fim) {
+    const atual = await page.textContent(seletor);
+    iguais = atual === anterior ? iguais + 1 : 0;
+    if (iguais >= 3) return atual;
+    anterior = atual;
+    await page.waitForTimeout(90);
+  }
+  return anterior ?? '';
+}
+
 const ALVOS = [
   { nome: 'chrome-android', engine: chromium, launch: {}, ctx: { ...devices['Pixel 7'] } },
   { nome: 'safari-ios', engine: webkit, launch: {}, ctx: { ...devices['iPhone 14'] } },
@@ -41,13 +56,13 @@ for (const alvo of ALVOS) {
   await page.fill('#t-bruto', '240');
   await page.fill('#t-km', '152');
   await page.fill('#t-horas', '8');
-  const previa = (await page.textContent('#previa')).replace(/\s+/g, ' ');
+  const previa = (await textoEstavel(page, '#previa')).replace(/\s+/g, ' ');
   await page.click('#form-turno button[type=submit]');
   await page.waitForTimeout(300);
 
   await page.click('.nav-mobile a[href="#/painel"]');
   await page.waitForSelector('[data-chart-dias] svg', { timeout: 10000 });
-  const hero = (await page.textContent('.tile.hero')).replace(/\s+/g, ' ').trim();
+  const hero = (await textoEstavel(page, '.tile.hero')).replace(/\s+/g, ' ').trim();
   const colunas = await page.locator('[data-chart-dias] svg path.bar').count();
 
   // carrossel: 60 s e sem travar no toque

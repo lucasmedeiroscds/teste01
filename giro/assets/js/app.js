@@ -2,6 +2,8 @@
 
 import { getState, subscribe, update, aplicarPresetVeiculo } from './store.js';
 import { carousel } from './carousel.js';
+import { emExemplo, limparExemplo } from './demo.js';
+import { entrarNaTela } from './anim.js';
 import { $, el, icon, esc, parseNum, n0, n2, toast, uid } from './util.js';
 
 import * as painel from './views/painel.js';
@@ -76,6 +78,11 @@ function montarCasca() {
     </div>
   </header>
 
+  <div class="faixa-exemplo" id="faixa-exemplo" role="status" hidden>
+    <span><b>Dados de exemplo.</b> Nada aqui é seu — é um mês fictício para você ver o app funcionando.</span>
+    <button class="btn btn-sm btn-ghost" type="button" data-limpar-exemplo>Limpar e começar do zero</button>
+  </div>
+
   <main id="conteudo" tabindex="-1"></main>
 
   <footer class="foot">
@@ -101,19 +108,34 @@ function montarCasca() {
 
   $('#btn-tema').addEventListener('click', alternarTema);
 
+  $('[data-limpar-exemplo]').addEventListener('click', () => {
+    if (!confirm('Isso apaga o exemplo e deixa o app zerado, pronto para os seus dados. Continuar?')) return;
+    limparExemplo();
+    toast('Exemplo removido. O app está zerado.');
+    location.hash = '#/painel';
+  });
+
   // Com o teclado do celular aberto sobra pouca tela; a barra inferior flutuando
-  // em cima dele só atrapalha quem está preenchendo um campo.
-  const digitavel = (t) => t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName);
+  // em cima dele só atrapalha quem está preenchendo um campo. Só vale onde a
+  // barra existe de fato — em tela larga ela nem é exibida.
+  const digitavel = (t) => t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName) && t.type !== 'checkbox';
+  const telaEstreita = () => window.innerWidth < 860;
+
   document.addEventListener('focusin', (e) => {
-    if (digitavel(e.target)) app.classList.add('is-digitando');
+    if (digitavel(e.target) && telaEstreita()) app.classList.add('is-digitando');
   });
-  document.addEventListener('focusout', (e) => {
-    if (digitavel(e.target)) {
-      setTimeout(() => {
-        if (!digitavel(document.activeElement)) app.classList.remove('is-digitando');
-      }, 60);
-    }
+  document.addEventListener('focusout', () => {
+    // o campo pode ter sido removido do DOM por um redesenho, e aí focusout
+    // nem sempre chega — por isso a verificação é sobre quem está em foco agora
+    setTimeout(() => {
+      if (!digitavel(document.activeElement)) mostrarBarra();
+    }, 60);
   });
+}
+
+/** Rede de segurança: a barra inferior nunca pode ficar escondida sem motivo. */
+function mostrarBarra() {
+  $('#app')?.classList.remove('is-digitando');
 }
 
 /* ---------- roteador ---------- */
@@ -127,6 +149,9 @@ function navegar() {
   conteudo.innerHTML = '';
   rota.view.render(conteudo);
   rotaAtual = rota;
+  mostrarBarra();
+  atualizarFaixaExemplo();
+  entrarNaTela(conteudo);
 
   document.title = `${rota.rotulo} · Giro`;
   document.querySelectorAll('[data-rota]').forEach((a) => {
@@ -148,6 +173,13 @@ function aoMudarEstado() {
   carousel.unmount();
   conteudo.innerHTML = '';
   rotaAtual.view.render(conteudo);
+  mostrarBarra();
+  atualizarFaixaExemplo();
+}
+
+function atualizarFaixaExemplo() {
+  const faixa = $('#faixa-exemplo');
+  if (faixa) faixa.hidden = !emExemplo();
 }
 
 /* ---------- primeira configuração ---------- */

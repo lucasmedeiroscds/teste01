@@ -4,6 +4,7 @@
 import { getState, addTurno, removeTurno, addAbastecimento, removeAbastecimento } from '../store.js';
 import { custoVariavelKm, custoFixoMes, consumoReal, DIAS_MES_MEDIO } from '../finance.js';
 import { PLATAFORMAS, nomeApp } from '../connectors/registry.js';
+import { emExemplo, limparExemplo } from '../demo.js';
 import {
   money, n0, n1, parseNum, todayISO, longDate, esc, icon, toast, hoursToLabel, safeDiv,
 } from '../util.js';
@@ -222,6 +223,10 @@ export function render(root) {
         toast('Informe pelo menos o ganho bruto ou os quilômetros.', 'error');
         return;
       }
+      // Dado de verdade e exemplo nunca convivem: o primeiro lançamento seu
+      // limpa o mês fictício, para não haver número de brincadeira misturado.
+      const saindoDoExemplo = emExemplo();
+      if (saindoDoExemplo) limparExemplo();
       addTurno({
         data: formTurno.data.value || todayISO(),
         app: formTurno.app.value,
@@ -233,7 +238,7 @@ export function render(root) {
         gastos: parseNum(formTurno.gastos.value),
         obs: formTurno.obs.value.trim(),
       });
-      toast('Turno salvo.', 'good');
+      toast(saindoDoExemplo ? 'Exemplo removido e primeiro dia salvo.' : 'Turno salvo.', 'good');
       render(root);
     });
   }
@@ -245,13 +250,15 @@ export function render(root) {
       const litros = parseNum(formAbast.litros.value);
       const valor = parseNum(formAbast.valor.value);
       if (litros <= 0 || valor <= 0) { toast('Informe os litros e o valor pago.', 'error'); return; }
+      const saindoDoExemplo = emExemplo();
+      if (saindoDoExemplo) limparExemplo();
       addAbastecimento({
         data: formAbast.data.value || todayISO(),
         litros, valor,
         odometro: parseNum(formAbast.odometro.value),
         tanqueCheio: formAbast.tanqueCheio.checked,
       });
-      toast('Abastecimento registrado.', 'good');
+      toast(saindoDoExemplo ? 'Exemplo removido e abastecimento salvo.' : 'Abastecimento registrado.', 'good');
       render(root);
     });
   }
