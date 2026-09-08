@@ -1,3 +1,7 @@
 node_modules/
 shots/
 shots-mobile/
+
+# Artefatos de build do Android — reproduzíveis com ./gradlew
+*.apk
+*.idsig
