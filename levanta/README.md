@@ -46,6 +46,23 @@ Quase todo celular atual é `arm64-v8a`. Se o seu for antigo, use
 `app-armeabi-v7a-debug.apk`; na dúvida, `app-universal-debug.apk` (92 MB, contém
 as duas).
 
+### Quando algo quebrar no aparelho
+
+Se o app fechar sozinho, o primeiro passo é descartar o R8 — a minificação do
+build de release remove código que o ML Kit carrega por reflexão, e uma regra
+faltando no `proguard-rules.pro` aparece como crash só no aparelho:
+
+```bash
+./gradlew :app:assembleDiagnostico
+adb install -r app/build/outputs/apk/diagnostico/app-arm64-v8a-diagnostico.apk
+adb logcat -s AndroidRuntime ServicoDeAlarme Agendador
+```
+
+A variante `diagnostico` é depurável, **sem minificação nenhuma** e assinada com
+a chave de depuração. Ela usa o id `br.com.levanta.diagnostico`, então convive
+com a versão normal no mesmo celular. Se o problema some nela, é regra de
+ProGuard faltando; se continua, é bug de verdade.
+
 Sem cabo: copie o APK para o celular e abra pelo gerenciador de arquivos,
 liberando "instalar de fontes desconhecidas".
 

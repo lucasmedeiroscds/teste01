@@ -30,6 +30,18 @@ android {
         debug {
             applicationIdSuffix = ".debug"
         }
+
+        // Build para diagnosticar problema em aparelho: sem R8, para descartar
+        // a minificação como causa, e sem o `ui-tooling` do Compose, que só
+        // entra na variante `debug` e sozinho responde por boa parte do dex.
+        // Assinado com a chave de depuração, então instala direto.
+        create("diagnostico") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".diagnostico"
+            isMinifyEnabled = false
+            isShrinkResources = false
+            matchingFallbacks += "debug"
+        }
     }
 
     compileOptions {
