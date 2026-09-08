@@ -1,0 +1,11 @@
+# Gerados pelo Gradle e pelo Android Studio
+build/
+.gradle/
+local.properties
+*.iml
+.idea/
+captures/
+.cxx/
+
+# Log de erros do compilador Kotlin
+.kotlin/

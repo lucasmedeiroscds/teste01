@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Levanta" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/fundo</item>
+    </style>
+
+    <!-- As telas do disparo abrem sempre escuras, mesmo com o sistema no claro. -->
+    <style name="Theme.Levanta.Alarme" parent="Theme.Levanta">
+        <item name="android:windowBackground">@color/noite</item>
+        <item name="android:windowShowWallpaper">false</item>
+    </style>
+</resources>
