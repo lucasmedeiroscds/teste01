@@ -63,6 +63,21 @@ a chave de depuração. Ela usa o id `br.com.levanta.diagnostico`, então conviv
 com a versão normal no mesmo celular. Se o problema some nela, é regra de
 ProGuard faltando; se continua, é bug de verdade.
 
+Ela também comprime as bibliotecas nativas dentro do APK, o que a derruba de
+38 MB para 23 MB — útil para transferir à mão, por WhatsApp ou cabo. O custo é
+o sistema extrair os `.so` na instalação: ocupa mais espaço no aparelho e abre
+um pouco mais devagar. O release mantém o padrão descomprimido, que é o certo
+para uso normal.
+
+### Se a instalação falhar
+
+| O que aparece | O que é |
+|---|---|
+| "Instalação bloqueada" / "fontes desconhecidas" | Libere a permissão **para o app que abriu o arquivo** (Chrome, Arquivos, WhatsApp) — não é uma permissão global. |
+| "App não instalado" | Já existe uma versão com o mesmo id e assinatura diferente. Desinstale a anterior primeiro. |
+| "Aplicativo prejudicial bloqueado" | Play Protect reclamando de APK fora da loja. Em Play Store → perfil → Play Protect, desative temporariamente. |
+| Nada acontece ao tocar | O arquivo veio incompleto, ou o gerenciador de arquivos não abre `.apk`. Confira o tamanho e abra pelo app **Arquivos** do sistema. |
+
 Sem cabo: copie o APK para o celular e abra pelo gerenciador de arquivos,
 liberando "instalar de fontes desconhecidas".
 

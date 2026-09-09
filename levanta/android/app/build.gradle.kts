@@ -72,6 +72,24 @@ android {
     }
 }
 
+/*
+ * Só no `diagnostico`: comprime as bibliotecas nativas dentro do APK.
+ *
+ * Por padrão o AGP guarda os `.so` descomprimidos, para o sistema mapeá-los
+ * direto do APK — melhor no dia a dia, mas a `libxeno_native.so` do ML Kit
+ * sozinha ocupa 20,6 MB assim, contra 5,4 MB comprimida. Como este build existe
+ * para ser transferido e instalado à mão, o arquivo menor vale mais que o ganho
+ * de inicialização; em troca, o sistema extrai os `.so` na instalação e o app
+ * ocupa mais espaço no aparelho.
+ *
+ * O release continua com o padrão, que é o certo para uso normal.
+ */
+androidComponents {
+    onVariants(selector().withBuildType("diagnostico")) { variante ->
+        variante.packaging.jniLibs.useLegacyPackaging.set(true)
+    }
+}
+
 dependencies {
     implementation(project(":core"))
 
