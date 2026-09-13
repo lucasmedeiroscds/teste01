@@ -112,7 +112,7 @@ summary { cursor: pointer; font-weight: 600; }
   position: absolute; left: 2px; top: 2px; z-index: 2; background: rgba(0,0,0,.55); border-radius: 6px;
   padding: 0 3px; font-weight: 700; font-size: .95em;
 }
-.tile .forts { position: absolute; left: 2px; bottom: 2px; z-index: 2; font-size: .9em; color: var(--accent); }
+.tile .forts { color: var(--accent); letter-spacing: -1px; }
 .center {
   grid-area: 2 / 2 / 8 / 8; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 6px; text-align: center; padding: 8px; color: var(--muted); font-size: clamp(10px, 1.7vw, 14px);

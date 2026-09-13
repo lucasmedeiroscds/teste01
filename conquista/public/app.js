@@ -200,9 +200,11 @@
           tile.style.background = `linear-gradient(180deg, ${owner.color}22, #131a33)`;
         }
         tile.append(el('div', 'nm', t.name));
-        tile.append(el('div', 'stat', owner ? `trib ${money(t.tribute)}` : money(t.price)));
+        const stat = el('div', 'stat');
+        if (t.forts) stat.append(el('span', 'forts', '▲'.repeat(t.forts) + ' '));
+        stat.append(el('span', '', owner ? `trib ${money(t.tribute)}` : money(t.price)));
+        tile.append(stat);
         if (t.troops) tile.append(el('div', 'troops', `⚔${t.troops}`));
-        if (t.forts) tile.append(el('div', 'forts', '▲'.repeat(t.forts)));
       } else {
         tile.append(el('div', 'nm', t.name));
       }
@@ -329,7 +331,8 @@
         box.append(el('div', 'box-title', 'Atacar a partir de:'));
         const row = el('div', 'row');
         for (const o of origins) {
-          row.append(actionBtn(`${o.name} (${o.troops})`, () => send('action', { type: 'attack', from: o.index }), 'danger'));
+          row.append(actionBtn(`⚔ Atacar de ${o.name} (${o.troops})`,
+            () => send('action', { type: 'attack', from: o.index }), 'danger'));
         }
         box.append(row);
       } else {
