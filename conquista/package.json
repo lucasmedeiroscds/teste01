@@ -1,0 +1,26 @@
+{
+  "name": "conquista-e-capital",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jogo de tabuleiro multiplayer no navegador que mistura conceitos de War (conquista territorial, tropas, dados de combate) e Banco Imobiliario (compra de territorios, aluguel/tributo, construcoes).",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test tests/game.test.mjs tests/server.test.mjs",
+    "test:e2e": "node --test tests/e2e.test.mjs",
+    "test:all": "node --test tests/game.test.mjs tests/server.test.mjs tests/e2e.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0",
+    "socket.io-client": "^4.8.3"
+  }
+}
