@@ -9,12 +9,14 @@ import crypto from 'node:crypto';
 import express from 'express';
 import { Server } from 'socket.io';
 import { CLASSES, act, createGame, current, publicState, surrender } from './src/game.js';
+import { botNames, nextBotAction } from './src/bot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const MAX_PLAYERS = 6;
 const ROOM_TTL_MS = 1000 * 60 * 60 * 3;
 const LOBBY_GRACE_MS = 30_000;
+const BOT_DELAY_MS = 700; // ritmo das jogadas dos bots, para dar para acompanhar
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
@@ -43,6 +45,8 @@ function createRoom(hostName) {
     status: 'lobby',
     hostId: null,
     members: new Map(), // playerId -> { id, name, socketId, online }
+    botCount: 0,
+    botIds: new Set(),
     game: null,
   };
   rooms.set(room.code, room);
@@ -56,6 +60,8 @@ function roomView(room, viewerId = null) {
     hostId: room.hostId,
     members: [...room.members.values()].map((m) => ({ id: m.id, name: m.name, cls: m.cls, online: m.online })),
     classes: Object.values(CLASSES),
+    botCount: room.botCount,
+    botIds: [...room.botIds],
     maxPlayers: MAX_PLAYERS,
     game: room.game ? publicState(room.game, viewerId) : null,
   };
@@ -71,6 +77,35 @@ function broadcast(room) {
 
 function findRoom(code) {
   return rooms.get(String(code || '').toUpperCase().trim());
+}
+
+/**
+ * Enquanto a vez for de um bot, ele joga sozinho — uma acao a cada BOT_DELAY_MS, para
+ * os humanos conseguirem acompanhar. O laco para assim que a vez volta para alguem.
+ */
+function scheduleBots(room) {
+  if (!room.game || room.game.phase === 'ended' || room.botLoop) return;
+  if (!room.botIds.has(current(room.game).id)) return;
+  room.botLoop = true;
+  const passo = () => {
+    if (!rooms.has(room.code) || !room.game || room.game.phase === 'ended') {
+      room.botLoop = false;
+      return;
+    }
+    const jogador = current(room.game);
+    if (!room.botIds.has(jogador.id)) {
+      room.botLoop = false;
+      return;
+    }
+    const acao = nextBotAction(room.game, jogador.id);
+    const res = acao ? act(room.game, jogador.id, acao) : { ok: false };
+    // Acao invalida nao pode travar a sala: encerra o turno do bot e segue o jogo.
+    if (!res.ok) act(room.game, jogador.id, { type: 'endTurn' });
+    if (room.game.phase === 'ended') room.status = 'ended';
+    broadcast(room);
+    setTimeout(passo, BOT_DELAY_MS).unref?.();
+  };
+  setTimeout(passo, BOT_DELAY_MS).unref?.();
 }
 
 io.on('connection', (socket) => {
@@ -125,15 +160,39 @@ io.on('connection', (socket) => {
     cb?.({ ok: true, code: room.code });
   });
 
+  socket.on('setBots', ({ count } = {}, cb) => {
+    const room = findRoom(ctx?.code);
+    if (!room) return cb?.({ ok: false, error: 'Sala invalida.' });
+    if (room.hostId !== ctx.playerId) return cb?.({ ok: false, error: 'Apenas o anfitriao escolhe os bots.' });
+    if (room.status !== 'lobby') return cb?.({ ok: false, error: 'A partida ja comecou.' });
+    const max = MAX_PLAYERS - room.members.size;
+    room.botCount = Math.max(0, Math.min(max, Math.floor(Number(count) || 0)));
+    broadcast(room);
+    cb?.({ ok: true, botCount: room.botCount });
+  });
+
   socket.on('start', (_payload, cb) => {
     const room = findRoom(ctx?.code);
     if (!room) return cb?.({ ok: false, error: 'Sala invalida.' });
     if (room.hostId !== ctx.playerId) return cb?.({ ok: false, error: 'Apenas o anfitriao inicia.' });
     if (room.status !== 'lobby') return cb?.({ ok: false, error: 'Partida ja iniciada.' });
-    if (room.members.size < 2) return cb?.({ ok: false, error: 'Sao necessarios ao menos 2 jogadores.' });
-    room.game = createGame([...room.members.values()].map((m) => ({ id: m.id, name: m.name, cls: m.cls })));
+    const bots = Math.min(room.botCount, MAX_PLAYERS - room.members.size);
+    if (room.members.size + bots < 2) {
+      return cb?.({ ok: false, error: 'Sao necessarios ao menos 2 participantes (humanos ou bots).' });
+    }
+    const humanos = [...room.members.values()].map((m) => ({ id: m.id, name: m.name, cls: m.cls }));
+    const classes = Object.keys(CLASSES);
+    const nomes = botNames(bots);
+    room.botIds = new Set();
+    const jogadoresBots = nomes.map((nome, i) => {
+      const id = `bot${i + 1}`;
+      room.botIds.add(id);
+      return { id, name: nome, cls: classes[Math.floor(Math.random() * classes.length)], bot: true };
+    });
+    room.game = createGame([...humanos, ...jogadoresBots]);
     room.status = 'playing';
     broadcast(room);
+    scheduleBots(room);
     cb?.({ ok: true });
   });
 
@@ -143,6 +202,7 @@ io.on('connection', (socket) => {
     const res = act(room.game, ctx.playerId, action);
     if (room.game.phase === 'ended') room.status = 'ended';
     broadcast(room);
+    scheduleBots(room);
     cb?.(res);
   });
 
@@ -152,6 +212,7 @@ io.on('connection', (socket) => {
     const res = surrender(room.game, ctx.playerId);
     if (room.game.phase === 'ended') room.status = 'ended';
     broadcast(room);
+    scheduleBots(room);
     cb?.(res);
   });
 
@@ -166,6 +227,7 @@ io.on('connection', (socket) => {
     const res = surrender(room.game, turnPlayer.id);
     if (room.game.phase === 'ended') room.status = 'ended';
     broadcast(room);
+    scheduleBots(room);
     cb?.(res);
   });
 

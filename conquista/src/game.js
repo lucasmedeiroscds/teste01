@@ -65,9 +65,10 @@ export const RULES = {
   titheRate: 0.1,
   loanMax: 600,
   loanFromRound: 5,
-  loanInterest: 0.2,
-  loanInterestEvery: 5,
-  loanInterestRate: 0.1,
+  loanInterest: 0.3, // juros cobrados na contratacao
+  loanInstallments: 10, // a divida vem parcelada, uma parcela por rodada
+  loanLateRate: 0.02, // deixou de pagar: o saldo devedor sobe 2% por rodada
+  loanSeizeAfter: 10, // passou disso com divida aberta, o banco apreende industrias
   tributePerTroop: 10,
   tributePerSmall: 30,
   tributePerLarge: 60,
@@ -445,6 +446,71 @@ function checkEliminations(s, culpado = null) {
   }
 }
 
+/**
+ * Cobranca da parcela do emprestimo, uma por rodada. Quem nao paga (por escolha ou por
+ * falta de caixa) ve o saldo devedor subir 2% por rodada; passando de 10 rodadas com a
+ * divida aberta, o banco apreende industrias ate cobrir o valor.
+ */
+function chargeInstallment(s, player) {
+  const cfg = s.config;
+  const loan = player.loan;
+  if (!loan) return;
+  const parcela = Math.min(loan.parcela, loan.debt);
+  if (loan.autoPay && player.gold >= parcela) {
+    player.gold -= parcela;
+    loan.debt -= parcela;
+    loan.pagas += 1;
+    if (loan.debt <= 0) {
+      player.loan = null;
+      pushLog(s, `${player.name} quita a ultima parcela do emprestimo.`, 'good');
+      return;
+    }
+    pushLog(s, `${player.name} paga a parcela de ${parcela} ao banco (saldo ${loan.debt}).`);
+  } else {
+    const juros = pct(loan.debt, cfg.loanLateRate);
+    loan.debt += juros;
+    loan.atrasos += 1;
+    pushLog(
+      s,
+      `${player.name} nao pagou a parcela: juros de ${cfg.loanLateRate * 100}% sobre a divida ` +
+        `(+${juros}, saldo ${loan.debt}).`,
+      'warn',
+    );
+  }
+  if (s.round - loan.takenAt > cfg.loanSeizeAfter && loan.debt > 0) seizeFactories(s, player);
+}
+
+/** O banco apreende industrias proporcionais ao valor da divida. */
+function seizeFactories(s, player) {
+  const loan = player.loan;
+  const f = s.config.factories;
+  const apreendidas = [];
+  while (loan.debt > 0) {
+    const lands = ownedBy(s, player.id);
+    const alvo = lands.find((c) => c.large > 0) || lands.find((c) => c.small > 0);
+    if (!alvo) break;
+    const grande = alvo.large > 0;
+    if (grande) alvo.large -= 1; else alvo.small -= 1;
+    const valor = grande ? f.large.cost : f.small.cost;
+    loan.debt = Math.max(0, loan.debt - valor);
+    apreendidas.push(`${grande ? 'grande' : 'pequena'} em ${alvo.name}`);
+  }
+  if (!apreendidas.length) {
+    pushLog(s, `O banco quer apreender bens de ${player.name}, mas nao sobrou industria nenhuma.`, 'bad');
+    return;
+  }
+  pushLog(
+    s,
+    `Banco apreende ${apreendidas.length} industria(s) de ${player.name} (${apreendidas.join(', ')}) — ` +
+      `saldo devedor: ${loan.debt}.`,
+    'bad',
+  );
+  if (loan.debt <= 0) {
+    player.loan = null;
+    pushLog(s, `A divida de ${player.name} foi liquidada na marra.`, 'warn');
+  }
+}
+
 function applyRoundEvents(s, rng) {
   const cfg = s.config;
   const round = s.round;
@@ -498,13 +564,7 @@ function applyRoundEvents(s, rng) {
     }
   }
 
-  if (round % cfg.loanInterestEvery === 0) {
-    for (const p of alive().filter((x) => x.loan)) {
-      const juros = pct(p.loan.debt, cfg.loanInterestRate);
-      p.loan.debt += juros;
-      pushLog(s, `Juros: a divida de ${p.name} sobe ${juros} (saldo ${p.loan.debt}).`, 'warn');
-    }
-  }
+  for (const p of alive().filter((x) => x.loan)) chargeInstallment(s, p);
 
   if (round >= s.nextEventRound) drawEventCards(s, rng);
 }
@@ -754,9 +814,23 @@ function doLoan(s, player, action) {
   const amount = Math.min(cfg.loanMax, Math.max(50, Math.floor(Number(action.amount) || 0)));
   if (!amount) return fail('Valor invalido.');
   const debt = Math.round(amount * (1 + cfg.loanInterest));
+  const parcela = Math.ceil(debt / cfg.loanInstallments);
   player.gold += amount;
-  player.loan = { principal: amount, debt, takenAt: s.round };
-  pushLog(s, `${player.name} pega ${amount} emprestado do banco (divida de ${debt}).`, 'warn');
+  player.loan = {
+    principal: amount,
+    debt,
+    parcela,
+    takenAt: s.round,
+    autoPay: true,
+    pagas: 0,
+    atrasos: 0,
+  };
+  pushLog(
+    s,
+    `${player.name} pega ${amount} emprestado (juros de ${cfg.loanInterest * 100}%: divide de ${debt} em ` +
+      `${cfg.loanInstallments} parcelas de ${parcela}).`,
+    'warn',
+  );
   return okRes();
 }
 
@@ -876,6 +950,18 @@ function resolveAction(state, player, action, rng, inTurn) {
     case 'recruit': return inTurn ? doRecruit(state, player, action) : fail('Role o dado primeiro.');
     case 'loan': return inTurn ? doLoan(state, player, action) : fail('Role o dado primeiro.');
     case 'repay': return inTurn ? doRepay(state, player, action) : fail('Role o dado primeiro.');
+    case 'loanAutoPay': {
+      if (!player.loan) return fail('Voce nao tem divida com o banco.');
+      player.loan.autoPay = !!action.on;
+      pushLog(
+        state,
+        player.loan.autoPay
+          ? `${player.name} volta a pagar as parcelas do banco.`
+          : `${player.name} decide nao pagar as parcelas (juros de ${state.config.loanLateRate * 100}% por rodada).`,
+        player.loan.autoPay ? 'info' : 'warn',
+      );
+      return okRes();
+    }
     case 'skip':
       if (state.pending && state.pending.kind === 'enemy') return fail('Voce nao pode ignorar o desembarque.');
       state.pending = null;
@@ -957,6 +1043,9 @@ export function publicState(s, viewerId = null) {
       loanMax: s.config.loanMax,
       loanFromRound: s.config.loanFromRound,
       loanInterest: s.config.loanInterest,
+      loanInstallments: s.config.loanInstallments,
+      loanLateRate: s.config.loanLateRate,
+      loanSeizeAfter: s.config.loanSeizeAfter,
       inflationEvery: s.config.inflationEvery,
       bankTaxEvery: s.config.bankTaxEvery,
       taxBrackets: s.config.taxBrackets.map(([limite, taxa]) => [limite === Infinity ? null : limite, taxa]),

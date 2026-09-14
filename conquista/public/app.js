@@ -300,9 +300,29 @@
       ul.append(li);
     });
     const host = room.hostId === me?.playerId;
-    $('#btn-start').disabled = !host || room.members.length < 2;
+    const bots = $('#bots-box');
+    bots.innerHTML = '';
+    const vagas = room.maxPlayers - room.members.length;
+    if (host) {
+      bots.append(el('div', 'box-title', 'Bots na partida'));
+      bots.append(el('div', 'hint', 'Da para jogar sozinho contra eles ou completar a mesa.'));
+      const row = el('div', 'row');
+      for (let n = 0; n <= vagas; n++) {
+        const b = el('button', 'btn' + (room.botCount === n ? ' primary' : ''), n === 0 ? 'Sem bots' : `${n} bot${n > 1 ? 's' : ''}`);
+        b.addEventListener('click', () => send('setBots', { count: n }));
+        row.append(b);
+      }
+      bots.append(row);
+    } else if (room.botCount) {
+      bots.append(el('div', 'hint', `O anfitriao adicionou ${room.botCount} bot(s) a partida.`));
+    }
+
+    const total = room.members.length + room.botCount;
+    $('#btn-start').disabled = !host || total < 2;
     $('#lobby-hint').textContent = host
-      ? (room.members.length < 2 ? 'Aguardando pelo menos mais um jogador...' : 'Tudo pronto, comece quando quiser.')
+      ? (total < 2
+        ? 'Chame mais alguem ou adicione um bot para comecar.'
+        : `Tudo pronto: ${room.members.length} humano(s) e ${room.botCount} bot(s).`)
       : 'Aguardando o anfitriao iniciar a partida.';
   }
 
@@ -354,7 +374,7 @@
     for (const geo of world.countries) {
       const c = countryById(geo.id);
       const owner = c?.ownerId ? playerById(c.ownerId) : null;
-      const path = svgEl('path', { d: geo.path, class: 'country' });
+      const path = svgEl('path', { d: geo.path, class: 'country', 'data-id': geo.id });
       const cont = g.continents?.[geo.cont];
       if (!owner && cont) {
         path.style.fill = cont.color;
@@ -362,8 +382,11 @@
       }
       if (owner) {
         // style inline: a regra CSS .country{fill} venceria um atributo fill.
+        // A saturacao e a espessura da borda crescem com a ocupacao militar.
+        const ocupacao = Math.min(1, (c.troops || 0) / 12);
         path.style.fill = owner.color;
-        path.style.fillOpacity = '0.85';
+        path.style.fillOpacity = String(0.45 + ocupacao * 0.45);
+        path.style.strokeWidth = String(0.5 + ocupacao * 1.6);
         path.classList.add('owned');
       }
       if (selected === geo.id) path.classList.add('sel');
@@ -381,16 +404,45 @@
     for (const { geo, c, owner } of labels) {
       const grp = svgEl('g', { class: 'marker', transform: `translate(${geo.cx} ${geo.cy})` });
       if (owner && scale > 0.55) {
-        // Bem afastado, os selos se amontoam: mostramos so um ponto da cor do dono.
-        const dot = svgEl('circle', { cx: 0, cy: 0, r: 3.2, fill: owner.color, stroke: '#0b1020', 'stroke-width': 1 });
-        grp.append(dot);
+        // Bem afastado os selos se amontoam: um ponto da cor do dono, que cresce com as tropas.
+        const r = 2.4 + Math.min(1, c.troops / 15) * 3;
+        grp.append(svgEl('circle', { cx: 0, cy: 0, r, fill: owner.color, stroke: '#0b1020', 'stroke-width': 1 }));
+        if (c.small + c.large) {
+          grp.append(svgEl('rect', {
+            x: r + 1, y: -2.4, width: 2.2 + (c.small + c.large), height: 4.8, rx: 1,
+            fill: '#ffc447', stroke: '#0b1020', 'stroke-width': .6,
+          }));
+        }
       } else if (owner) {
         const badge = svgEl('g', { class: 'badge' });
-        badge.append(svgEl('rect', { x: -13, y: -7, width: 26, height: 14, rx: 7, fill: '#0b1020', 'fill-opacity': .8, stroke: owner.color }));
-        const t = svgEl('text', { y: 4, 'text-anchor': 'middle', class: 'badge-text' });
-        t.textContent = `⚔${c.troops}${c.small + c.large ? ` 🏭${c.small + c.large}` : ''}`;
-        badge.append(t);
         badge.setAttribute('transform', `scale(${Math.max(0.45, scale)})`);
+        badge.append(svgEl('rect', {
+          x: -13, y: -7, width: 26, height: 14, rx: 7,
+          fill: '#0b1020', 'fill-opacity': .82, stroke: owner.color,
+          'stroke-width': 1 + Math.min(1, c.troops / 12) * 1.5,
+        }));
+        const t = svgEl('text', { y: 4, 'text-anchor': 'middle', class: 'badge-text' });
+        t.textContent = `⚔${c.troops}`;
+        badge.append(t);
+        // Industrias: um predio por industria (as grandes sao maiores e mais claras).
+        const predios = [
+          ...Array.from({ length: c.large }, () => ({ w: 7, h: 10, fill: '#ffd166' })),
+          ...Array.from({ length: c.small }, () => ({ w: 5, h: 6, fill: '#f0a91c' })),
+        ];
+        const largura = predios.reduce((a, x) => a + x.w + 1.5, -1.5);
+        let x = -largura / 2;
+        for (const p of predios) {
+          badge.append(svgEl('rect', {
+            x, y: 18 - p.h, width: p.w, height: p.h, rx: 1,
+            fill: p.fill, stroke: '#0b1020', 'stroke-width': .9,
+          }));
+          // chamine, so para o predio parecer industria mesmo
+          badge.append(svgEl('rect', {
+            x: x + p.w - 2.2, y: 18 - p.h - 2.4, width: 1.6, height: 2.6,
+            fill: p.fill, stroke: '#0b1020', 'stroke-width': .5,
+          }));
+          x += p.w + 1.5;
+        }
         grp.append(badge);
       }
       if (view.w < 420 || selected === geo.id) {
@@ -464,7 +516,7 @@
       ['Imposto', `${Math.round(p.taxRate * 100)}% na proxima cobranca`],
     ];
     if (p.attackBonus) chips.push(['Dado de invasao', `+${p.attackBonus}`]);
-    if (p.loan) chips.push(['Divida', gold(p.loan.debt)]);
+    if (p.loan) chips.push(['Divida', `${gold(p.loan.debt)} (parcela ${p.loan.parcela}${p.loan.autoPay ? '' : ' — em calote'})`]);
     if (p.taxFree) chips.push(['Isencao', 'proximo imposto']);
     for (const [k, v] of chips) {
       const chip = el('span', 'chip');
@@ -492,7 +544,8 @@
     if (!p.alive) return box.append(el('div', 'box-title', 'Voce quebrou — assista ao desfecho.'));
     if (!isMyTurn()) {
       box.append(el('div', 'box-title', `Aguardando ${playerById(g.currentId)?.name}...`));
-      const offline = !room.members.find((m) => m.id === g.currentId)?.online;
+      const ehBot = room.botIds?.includes(g.currentId);
+      const offline = !ehBot && !room.members.find((m) => m.id === g.currentId)?.online;
       if (offline && room.hostId === me.playerId) {
         box.append(actionBtn('Jogador ausente: remover da partida', () => send('skipOffline'), 'danger'));
       }
@@ -553,7 +606,15 @@
       box.append(el('div', 'box-title', 'Banco'));
       const row = el('div', 'row');
       if (p.loan) {
-        row.append(actionBtn(`Quitar divida (${gold(p.loan.debt)})`, () => send('action', { type: 'repay' })));
+        const l = p.loan;
+        box.append(el('div', 'hint',
+          `Divida ${gold(l.debt)} • parcela ${gold(l.parcela)}/rodada • ${l.pagas} paga(s), ${l.atrasos} atrasada(s). ` +
+          `Depois de ${g.config.loanSeizeAfter} rodadas com divida aberta o banco apreende industrias.`));
+        row.append(actionBtn(`Quitar tudo (${gold(l.debt)})`, () => send('action', { type: 'repay' })));
+        row.append(actionBtn(`Pagar parcela (${gold(l.parcela)})`,
+          () => send('action', { type: 'repay', amount: l.parcela })));
+        row.append(actionBtn(l.autoPay ? 'Dar o calote (juros +2%/rodada)' : 'Voltar a pagar as parcelas',
+          () => send('action', { type: 'loanAutoPay', on: !l.autoPay }), l.autoPay ? 'danger' : ''));
       } else {
         const canLoan = g.round >= g.config.loanFromRound;
         const b = actionBtn(`Pegar emprestimo (ate ${g.config.loanMax})`, () => askLoan(g));
@@ -573,7 +634,10 @@
   }
 
   function askLoan(g) {
-    const raw = prompt(`Quanto quer pegar emprestado? (ate ${g.config.loanMax}, juros de ${g.config.loanInterest * 100}%)`, String(g.config.loanMax));
+    const raw = prompt(
+      `Quanto quer pegar emprestado? Ate ${g.config.loanMax}, com ${g.config.loanInterest * 100}% de juros, ` +
+      `pago em ${g.config.loanInstallments} parcelas (uma por rodada).`,
+      String(g.config.loanMax));
     if (raw == null) return;
     const amount = Math.floor(Number(raw));
     if (!Number.isFinite(amount) || amount <= 0) return toast('Valor invalido.');
@@ -714,11 +778,13 @@
     ul.innerHTML = '';
     for (const p of g.players) {
       const member = room.members.find((m) => m.id === p.id);
-      const li = el('li', [p.alive ? '' : 'dead', member?.online ? '' : 'offline'].join(' ').trim());
+      const ehBot = room.botIds?.includes(p.id);
+      const li = el('li', [p.alive ? '' : 'dead', (member?.online || ehBot) ? '' : 'offline'].join(' ').trim());
       const dot = el('span', 'dot');
       dot.style.background = p.color;
       li.append(dot, el('span', 'grow',
-        `${p.name}${p.id === g.currentId ? ' ⏳' : ''}${p.id === me?.playerId ? ' (voce)' : ''}\n${p.className} — “${p.ability}”`));
+        `${p.name}${ehBot ? ' 🤖' : ''}${p.id === g.currentId ? ' ⏳' : ''}${p.id === me?.playerId ? ' (voce)' : ''}` +
+        `\n${p.className} — “${p.ability}”`));
       const meta = el('span', 'meta');
       meta.innerHTML = `${gold(p.gold)}<br>${p.lands} paises • +${p.income}/rodada` +
         `<br>${p.conquistas} conquista(s)${p.loan ? ` • divida ${p.loan.debt}` : ''}`;

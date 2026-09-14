@@ -283,7 +283,7 @@ test('emprestimo: rodada 5, teto 600 e um por vez', () => {
   const antes = s.players[0].gold;
   assert.equal(act(s, 'a', { type: 'loan', amount: 5000 }).ok, true);
   assert.equal(s.players[0].gold, antes + 600);
-  assert.equal(s.players[0].loan.debt, 720);
+  assert.equal(s.players[0].loan.debt, 780, '30% de juros');
   assert.equal(act(s, 'a', { type: 'loan', amount: 100 }).ok, false);
 });
 
@@ -304,12 +304,12 @@ test('quem fica sem nenhum pais e eliminado', () => {
 
 test('vitoria por missao cumprida', () => {
   const s = newGame({ eventWindow: 999 });
-  const missao = MISSIONS.find((m) => m.id === 'm01'); // 12 paises
+  const missao = MISSIONS.find((m) => m.id === 'm01'); // 16 paises
   s.players[0].mission = { ...s.players[0].mission, id: missao.id, titulo: missao.titulo, texto: missao.texto };
-  const livres = s.countries.filter((c) => !c.ownerId).slice(0, 10);
+  const livres = s.countries.filter((c) => !c.ownerId).slice(0, 14);
   for (const c of livres) { c.ownerId = 'a'; c.troops = 1; }
   act(s, 'a', { type: 'roll' }, seq([1]));
-  assert.equal(s.winner, null, '11 paises ainda nao bastam');
+  assert.equal(s.winner, null, '15 paises ainda nao bastam');
   const maisUm = s.countries.find((c) => !c.ownerId);
   maisUm.ownerId = 'a';
   maisUm.troops = 1;
@@ -373,4 +373,64 @@ test('publicState esconde a missao e a carta dos adversarios', () => {
   s.phase = 'ended';
   const fim = publicState(s, 'a');
   assert.ok(fim.players[1].mission, 'no fim da partida as missoes sao reveladas');
+});
+
+test('emprestimo: 30% de juros, parcela por rodada e quitacao automatica', () => {
+  const s = newGame({ eventWindow: 999 });
+  s.nextEventRound = 999;
+  s.round = 5;
+  const ana = s.players[0];
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'loan', amount: 600 });
+  assert.equal(ana.loan.debt, 780, '30% de juros na contratacao');
+  assert.equal(ana.loan.parcela, 78, 'dividido em 10 parcelas');
+  assert.equal(ana.loan.autoPay, true);
+
+  const ouroAntes = ana.gold;
+  const renda = incomeOf(s, 'a');
+  passTurn(s); // Ana encerra
+  passTurn(s); // Bia encerra e comeca a rodada 6: cobranca
+  assert.equal(ana.loan.debt, 702, 'uma parcela abatida');
+  assert.equal(ana.loan.pagas, 1);
+  // Na virada da rodada 6: inflacao, depois a parcela; a renda so entra quando a vez volta.
+  assert.equal(ana.gold, Math.round(ouroAntes * 0.98) - 78 + renda, 'inflacao, parcela e renda');
+});
+
+test('dar o calote faz a divida subir 2% por rodada', () => {
+  const s = newGame({ eventWindow: 999 });
+  s.nextEventRound = 999;
+  s.round = 5;
+  const ana = s.players[0];
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'loan', amount: 600 });
+  assert.equal(act(s, 'a', { type: 'loanAutoPay', on: false }).ok, true);
+  const divida = ana.loan.debt;
+  passTurn(s);
+  passTurn(s);
+  assert.equal(ana.loan.debt, divida + Math.round(divida * 0.02));
+  assert.equal(ana.loan.atrasos, 1);
+  assert.equal(ana.loan.pagas, 0);
+});
+
+test('passando de 10 rodadas em calote, o banco apreende industrias', () => {
+  const s = newGame({ eventWindow: 999 });
+  s.nextEventRound = 999;
+  s.round = 5;
+  const ana = s.players[0];
+  const home = country(s, ana.homeId);
+  ana.gold = 20_000;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'build', countryId: home.id, size: 'large' });
+  act(s, 'a', { type: 'build', countryId: home.id, size: 'large' });
+  act(s, 'a', { type: 'build', countryId: home.id, size: 'small' });
+  act(s, 'a', { type: 'loan', amount: 600 });
+  act(s, 'a', { type: 'loanAutoPay', on: false });
+  ana.loan.takenAt = s.round - 11; // ja passou do prazo
+  const dividaAntes = ana.loan.debt;
+  assert.equal(home.large + home.small, 3);
+  passTurn(s);
+  passTurn(s);
+  assert.ok(home.large + home.small < 3, 'o banco levou industria');
+  assert.ok(!ana.loan || ana.loan.debt < dividaAntes, 'a divida foi abatida pelo que foi apreendido');
+  assert.ok(s.log.some((l) => l.text.includes('apreende')), 'apreensao registrada no historico');
 });

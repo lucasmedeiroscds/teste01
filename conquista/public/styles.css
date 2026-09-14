@@ -178,3 +178,7 @@ summary { cursor: pointer; font-weight: 600; }
 .mission p { font-size: 14px; color: var(--muted); }
 #mission-box .card { margin-bottom: 10px; }
 #mission-box .hint + .hint { margin-top: 4px; }
+
+/* bots no lobby */
+.bots-box { margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+.bots-box .row .btn { min-width: 84px; }

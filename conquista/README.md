@@ -30,6 +30,14 @@ Cada jogador escolhe uma classe no lobby, e cada classe tem uma habilidade:
 | Figura religiosa | **Dízimo** | A cada 8 rodadas recolhe 10% do patrimônio de cada adversário (limitado ao caixa de cada um). |
 | Laranjão | **Testa de ferro** | +1 no dado sempre que invade um território alheio. |
 
+## Jogar sozinho (ou com a mesa incompleta)
+
+No lobby o anfitrião escolhe **quantos bots** entram na partida (até completar 6
+participantes). Com 1 humano + 1 bot já dá para começar. Os bots jogam pelo mesmo caminho que
+um humano — rolam o dado, andam, compram, constroem, posicionam tropas, invadem, pegam
+empréstimo — uma ação a cada 0,7s para dar para acompanhar. Eles também recebem missão
+secreta e podem vencer.
+
 ## Missões secretas
 
 No início da partida cada jogador recebe **uma das 50 missões** (secretas: o servidor manda
@@ -96,10 +104,17 @@ imposto, indústria de brinde e modificador no dado de invasão.
 | A cada **4 rodadas** | *Meu pedaço*: político recebe 10% do próprio patrimônio. |
 | A cada **8 rodadas** | *Dízimo*: figura religiosa recolhe 10% do patrimônio dos outros. |
 | 1× a cada **20 rodadas** | Carta de evento para todo mundo, em rodada sorteada. |
-| A partir da **rodada 5** | Empréstimos: teto de **600**, **um por vez**, 20% de juros na contratação e mais 10% sobre o saldo devedor a cada 5 rodadas. |
+| A partir da **rodada 5** | Empréstimos: teto de **600**, **um por vez**, **30% de juros** na contratação, pagos em **10 parcelas** (uma por rodada). |
 
-Quem não consegue pagar um tributo quebra e entrega os países ao credor. Quem fica sem
-países e sem caixa sai do jogo.
+### O banco e o calote
+
+O empréstimo entra parcelado: você recebe o valor na hora e o banco cobra uma parcela por
+rodada, automaticamente. Dá para **escolher não pagar** (botão "Dar o calote") — nesse caso o
+saldo devedor **sobe 2% por rodada**. Passando de **10 rodadas** com dívida aberta, o banco
+**apreende indústrias** proporcionais ao valor devido (as grandes primeiro), abatendo o que
+foi tomado da dívida. Ficar sem caixa na hora da parcela conta como calote.
+
+Quem não consegue pagar um tributo quebra e entrega os países ao credor.
 
 O teto de indústrias por país fica em `RULES.maxFactoriesPerCountry`.
 
@@ -118,6 +133,7 @@ conquista/
 ├── src/countries.js     # As 60 economias, continentes, ranking, renda/rodada e rotas marítimas
 ├── src/missions.js      # As 50 missões secretas (texto + verificação automática)
 ├── src/cards.js         # As 40 cartas de evento e seus efeitos
+├── src/bot.js           # Politica dos bots (usa as mesmas ações de um jogador)
 ├── src/map.js           # Carrega o mapa gerado
 ├── src/game.js          # Motor de regras puro: dado, movimento, economia, guerra, vitória
 ├── tools/build-map.mjs  # Gera public/data/world.json (SVG + fronteiras) do Natural Earth
@@ -154,8 +170,14 @@ tela do celular sem rolagem lateral.
   bibliotecas de mapa no navegador.
 - **Reconexão:** cada jogador guarda `playerId` + token no `localStorage`; caiu ou recarregou,
   volta para a mesma partida. No lobby a vaga fica reservada por 30s.
+- **O mapa conta a história:** a cor do país satura e a borda engrossa conforme a **ocupação
+  militar** (tropas), e cada **indústria** vira um prédio desenhado sobre o país (as grandes
+  são maiores). Afastado, cada país vira um ponto que cresce com a guarnição.
 - **Mobile:** mapa com arrastar, pinça e botões de zoom, painel em abas, alvos de toque
   grandes e `safe-area-inset`. No desktop vira duas colunas com o mapa ocupando a altura da tela.
+- **Equilíbrio medido:** `tests/bot.test.mjs` joga partidas inteiras só com bots; os limiares
+  das missões foram calibrados com essas simulações para a partida durar ~25 rodadas em média
+  (antes do ajuste, algumas terminavam na rodada 6).
 
 ## Publicação
 
