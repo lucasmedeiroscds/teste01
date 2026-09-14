@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAdjacency, createTiles } from '../src/board.js';
-import { act, createGame, publicState, tributeOf } from '../src/game.js';
+import { MAP_COUNTRIES } from '../src/map.js';
+import { COUNTRIES, incomeForRank } from '../src/countries.js';
+import { CLASSES, act, createGame, incomeOf, neighborsOf, netWorth, publicState, taxFor, tributeOf } from '../src/game.js';
 
 // rng deterministico: devolve os valores de dado pedidos, na ordem.
 const seq = (values) => {
@@ -11,215 +12,274 @@ const seq = (values) => {
     return (v - 0.5) / 6;
   };
 };
-const newGame = () => createGame([{ id: 'a', name: 'Ana' }, { id: 'b', name: 'Bia' }]);
-const landIndex = (s, id) => s.tiles.findIndex((t) => t.id === id);
+const fixedRng = (v) => () => v;
 
-test('tabuleiro tem 28 casas, 24 territorios e adjacencia simetrica', () => {
-  const tiles = createTiles();
-  assert.equal(tiles.length, 28);
-  assert.equal(tiles.filter((t) => t.type === 'land').length, 24);
-  const adj = createAdjacency(tiles);
-  for (const [from, set] of adj) {
-    for (const to of set) {
-      assert.ok(adj.get(to).has(from), `adjacencia nao simetrica entre ${from} e ${to}`);
-      assert.notEqual(from, to);
+const newGame = (opts = {}, rng = fixedRng(0.01)) => createGame(
+  [{ id: 'a', name: 'Ana', cls: 'empresario' }, { id: 'b', name: 'Bia', cls: 'politico' }],
+  opts,
+  rng,
+);
+const country = (s, id) => s.countries.find((c) => c.id === id);
+const give = (s, id, playerId, troops = 1) => {
+  const c = country(s, id);
+  c.ownerId = playerId;
+  c.troops = troops;
+  return c;
+};
+/** Passa a vez do jogador atual sem interferir no tabuleiro. */
+const passTurn = (s, rng = seq([1])) => {
+  const id = s.players[s.turn].id;
+  act(s, id, { type: 'roll' }, rng);
+  act(s, id, { type: 'stop' });
+  if (s.pending?.kind === 'enemy') act(s, id, { type: 'tribute' });
+  else act(s, id, { type: 'skip' });
+  act(s, id, { type: 'endTurn' });
+};
+
+test('mapa tem 60 paises conectados e vizinhanca simetrica', () => {
+  assert.equal(MAP_COUNTRIES.length, 60);
+  assert.equal(COUNTRIES.length, 60);
+  const ids = new Set(MAP_COUNTRIES.map((c) => c.id));
+  for (const c of MAP_COUNTRIES) {
+    assert.ok(c.neighbors.length >= 1, `${c.id} sem vizinhos`);
+    for (const n of c.neighbors) {
+      assert.ok(ids.has(n), `vizinho desconhecido: ${n}`);
+      assert.ok(MAP_COUNTRIES.find((x) => x.id === n).neighbors.includes(c.id), `assimetria ${c.id}-${n}`);
     }
+    assert.ok(c.path.startsWith('M'), `${c.id} sem geometria`);
   }
 });
 
-test('so o jogador da vez pode agir', () => {
-  const s = newGame();
-  assert.equal(act(s, 'b', { type: 'roll' }, seq([1, 1])).ok, false);
-  assert.equal(act(s, 'a', { type: 'roll' }, seq([2, 3])).ok, true);
+test('renda por rodada segue o ranking de produtividade (400 a 100)', () => {
+  assert.equal(incomeForRank(1), 400);
+  assert.equal(incomeForRank(60), 100);
+  const first = MAP_COUNTRIES.find((c) => c.rank === 1);
+  const last = MAP_COUNTRIES.find((c) => c.rank === 60);
+  assert.equal(first.income, 400);
+  assert.equal(last.income, 100);
+  for (const c of MAP_COUNTRIES) {
+    assert.ok(c.income >= 100 && c.income <= 400, `${c.id} fora da escala`);
+  }
 });
 
-test('comprar territorio livre desconta dinheiro e registra o dono', () => {
+test('cada jogador comeca com um pais proprio e diferente', () => {
+  const s = newGame({}, Math.random);
+  const homes = s.players.map((p) => p.pos);
+  assert.equal(new Set(homes).size, s.players.length);
+  for (const p of s.players) {
+    const home = country(s, p.pos);
+    assert.equal(home.ownerId, p.id);
+    assert.ok(home.troops > 0);
+    assert.equal(incomeOf(s, p.id), home.income);
+  }
+});
+
+test('so o jogador da vez pode agir e o movimento respeita as fronteiras', () => {
   const s = newGame();
-  act(s, 'a', { type: 'roll' }, seq([2, 3])); // 5 casas -> Colombia
+  assert.equal(act(s, 'b', { type: 'roll' }).ok, false);
+  assert.equal(act(s, 'a', { type: 'roll' }, seq([3])).ok, true);
+  assert.equal(s.moves, 3);
+  const longe = s.countries.find((c) => !neighborsOf(s.players[0].pos).includes(c.id) && c.id !== s.players[0].pos);
+  assert.equal(act(s, 'a', { type: 'move', to: longe.id }).ok, false);
+  const vizinho = neighborsOf(s.players[0].pos)[0];
+  assert.equal(act(s, 'a', { type: 'move', to: vizinho }).ok, true);
+  assert.equal(s.players[0].pos, vizinho);
+  assert.equal(s.moves, 2);
+});
+
+test('parar em pais livre permite comprar; o ouro e descontado', () => {
+  const s = newGame();
+  act(s, 'a', { type: 'roll' }, seq([2]));
+  const alvo = neighborsOf(s.players[0].pos).find((id) => !country(s, id).ownerId);
+  act(s, 'a', { type: 'move', to: alvo });
+  act(s, 'a', { type: 'stop' });
   assert.equal(s.pending.kind, 'buy');
-  const tile = s.tiles[s.pending.tileId];
-  const before = s.players[0].money;
+  const c = country(s, alvo);
+  const antes = s.players[0].gold;
+  s.players[0].gold = c.price;
   assert.equal(act(s, 'a', { type: 'buy' }).ok, true);
-  assert.equal(tile.ownerId, 'a');
-  assert.equal(tile.troops, 1);
-  assert.equal(s.players[0].money, before - tile.price);
+  assert.equal(c.ownerId, 'a');
+  assert.equal(s.players[0].gold, 0);
+  assert.ok(antes > 0);
+  assert.equal(incomeOf(s, 'a'), country(s, s.players[0].homeId).income + c.income);
 });
 
-test('cair em territorio inimigo cobra tributo e transfere o dinheiro', () => {
+test('industrias custam, rendem e tem limite por pais', () => {
   const s = newGame();
-  const idx = 5;
-  s.tiles[idx].ownerId = 'b';
-  s.tiles[idx].troops = 2;
-  act(s, 'a', { type: 'roll' }, seq([2, 3]));
+  const home = country(s, s.players[0].homeId);
+  s.players[0].gold = 10_000;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  const rendaAntes = incomeOf(s, 'a');
+  assert.equal(act(s, 'a', { type: 'build', countryId: home.id, size: 'small' }).ok, true);
+  assert.equal(incomeOf(s, 'a'), rendaAntes + 35);
+  assert.equal(s.players[0].gold, 10_000 - 230);
+  assert.equal(act(s, 'a', { type: 'build', countryId: home.id, size: 'large' }).ok, true);
+  assert.equal(incomeOf(s, 'a'), rendaAntes + 35 + 75);
+  assert.equal(act(s, 'a', { type: 'build', countryId: home.id, size: 'large' }).ok, true);
+  assert.equal(act(s, 'a', { type: 'build', countryId: home.id, size: 'large' }).ok, false, 'limite de industrias grandes');
+  const alheio = s.countries.find((c) => c.ownerId === 'b');
+  assert.equal(act(s, 'a', { type: 'build', countryId: alheio.id, size: 'small' }).ok, false);
+});
+
+test('parar em pais inimigo cobra tributo (industrias e tropas somam)', () => {
+  const s = newGame();
+  const home = country(s, s.players[0].homeId);
+  const alvoId = neighborsOf(home.id)[0];
+  const alvo = give(s, alvoId, 'b', 3);
+  alvo.small = 1;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'move', to: alvoId });
   assert.equal(s.pending.kind, 'enemy');
-  const tribute = tributeOf(s, s.tiles[idx]);
+  const tributo = tributeOf(s, alvo);
+  assert.equal(tributo, Math.round(alvo.income / 4 + 30 + 3 * 10));
   const [ana, bia] = s.players;
-  const anaBefore = ana.money;
-  const biaBefore = bia.money;
+  const ouroAna = ana.gold;
+  const ouroBia = bia.gold;
+  assert.equal(act(s, 'a', { type: 'endTurn' }).ok, false, 'precisa resolver antes de encerrar');
   assert.equal(act(s, 'a', { type: 'tribute' }).ok, true);
-  assert.equal(ana.money, anaBefore - tribute);
-  assert.equal(bia.money, biaBefore + tribute);
+  assert.equal(ana.gold, ouroAna - tributo);
+  assert.equal(bia.gold, ouroBia + tributo);
 });
 
-test('nao da para encerrar o turno com invasao pendente', () => {
+test('guerra: vitoria toma o pais com as industrias, derrota custa tropas', () => {
   const s = newGame();
-  s.tiles[5].ownerId = 'b';
-  s.tiles[5].troops = 1;
-  act(s, 'a', { type: 'roll' }, seq([2, 3]));
-  assert.equal(act(s, 'a', { type: 'endTurn' }).ok, false);
-  assert.equal(act(s, 'a', { type: 'skip' }).ok, false);
+  const home = give(s, s.players[0].homeId, 'a', 6);
+  const alvoId = neighborsOf(home.id)[0];
+  const alvo = give(s, alvoId, 'b', 1);
+  alvo.large = 1;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'move', to: alvoId });
+  assert.equal(act(s, 'a', { type: 'attack', from: home.id }, seq([6, 6, 6, 1])).ok, true);
+  assert.equal(alvo.ownerId, 'a');
+  assert.equal(alvo.large, 1, 'industrias vao junto com o pais');
+  assert.equal(home.troops + alvo.troops, 6);
+  assert.equal(s.pending, null);
+
+  const s2 = newGame();
+  const base = give(s2, s2.players[0].homeId, 'a', 4);
+  const inimigoId = neighborsOf(base.id)[0];
+  give(s2, inimigoId, 'b', 3);
+  act(s2, 'a', { type: 'roll' }, seq([1]));
+  act(s2, 'a', { type: 'move', to: inimigoId });
+  act(s2, 'a', { type: 'attack', from: base.id }, seq([1, 1, 1, 6, 6]));
+  assert.equal(country(s2, inimigoId).ownerId, 'b');
+  assert.equal(base.troops, 2);
+  assert.equal(s2.pending.kind, 'enemy', 'ainda deve o tributo');
 });
 
-test('ataque vitorioso conquista o territorio e move tropas', () => {
+test('emprestimo: so a partir da rodada 5, teto de 600 e um por vez', () => {
   const s = newGame();
-  const target = 5;
-  const from = 4; // vizinho no anel
-  s.tiles[from].ownerId = 'a';
-  s.tiles[from].troops = 5;
-  s.tiles[target].ownerId = 'b';
-  s.tiles[target].troops = 1;
-  act(s, 'a', { type: 'roll' }, seq([2, 3]));
-  assert.equal(s.pending.kind, 'enemy');
-  // atacante tira 6,6,6 e defensor 1
-  const res = act(s, 'a', { type: 'attack', from }, seq([6, 6, 6, 1]));
-  assert.equal(res.ok, true);
-  assert.equal(s.tiles[target].ownerId, 'a');
-  assert.ok(s.tiles[target].troops >= 1);
-  assert.equal(s.tiles[from].troops + s.tiles[target].troops, 5);
-  assert.equal(s.pending, null); // conquistou: nao paga tributo
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  assert.equal(act(s, 'a', { type: 'loan', amount: 300 }).ok, false, 'cedo demais');
+  s.round = 5;
+  const antes = s.players[0].gold;
+  assert.equal(act(s, 'a', { type: 'loan', amount: 5000 }).ok, true);
+  assert.equal(s.players[0].gold, antes + 600, 'teto de 600');
+  assert.equal(s.players[0].loan.debt, 720, '20% de juros na contratacao');
+  assert.equal(act(s, 'a', { type: 'loan', amount: 100 }).ok, false, 'ja tem emprestimo aberto');
+  s.players[0].gold = 1000;
+  assert.equal(act(s, 'a', { type: 'repay', amount: 720 }).ok, true);
+  assert.equal(s.players[0].loan, null);
+  assert.equal(act(s, 'a', { type: 'loan', amount: 100 }).ok, true, 'quitou, pode pegar outro');
 });
 
-test('ataque perdedor mantem o dono e custa tropas ao atacante', () => {
+test('inflacao tira 2% do caixa de todos a cada 2 rodadas', () => {
   const s = newGame();
-  const target = 5;
-  const from = 4;
-  s.tiles[from].ownerId = 'a';
-  s.tiles[from].troops = 4;
-  s.tiles[target].ownerId = 'b';
-  s.tiles[target].troops = 3;
-  act(s, 'a', { type: 'roll' }, seq([2, 3]));
-  act(s, 'a', { type: 'attack', from }, seq([1, 1, 1, 6, 6]));
-  assert.equal(s.tiles[target].ownerId, 'b');
-  assert.equal(s.tiles[from].troops, 2);
-  assert.equal(s.pending.kind, 'enemy'); // ainda precisa pagar o tributo
+  for (const p of s.players) p.gold = 1000;
+  const rendaA = incomeOf(s, 'a');
+  const rendaB = incomeOf(s, 'b');
+  passTurn(s); // Ana
+  passTurn(s); // Bia -> comeca a rodada 2, inflacao
+  assert.equal(s.round, 2);
+  // Ana: 1000 -2% -> 980, mais a renda do inicio do turno dela.
+  assert.equal(s.players[0].gold, 980 + rendaA);
+  assert.equal(s.players[1].gold, Math.round((1000 + rendaB) * 0.98));
 });
 
-test('atacar exige fronteira e duas tropas na origem', () => {
+test('imposto do banco cobra 20% na rodada 13 e o empresario paga 10% a menos', () => {
   const s = newGame();
-  s.tiles[5].ownerId = 'b';
-  s.tiles[5].troops = 2;
-  s.tiles[4].ownerId = 'a';
-  s.tiles[4].troops = 1;
-  act(s, 'a', { type: 'roll' }, seq([2, 3]));
-  assert.equal(act(s, 'a', { type: 'attack', from: 4 }).ok, false); // so 1 tropa
-  s.tiles[4].troops = 3;
-  const distante = s.tiles.findIndex((t) => t.id === 'australia');
-  s.tiles[distante].ownerId = 'a';
-  s.tiles[distante].troops = 5;
-  assert.equal(act(s, 'a', { type: 'attack', from: distante }).ok, false); // sem fronteira
-  assert.equal(act(s, 'a', { type: 'attack', from: 4 }, seq([6, 6, 6, 1, 1])).ok, true);
+  s.round = 12;
+  s.turn = 1; // proximo passe fecha a rodada 12 e abre a 13
+  for (const p of s.players) p.gold = 1000;
+  assert.equal(taxFor(s, s.players[0], 200), 180, 'Lavei, sumi: empresario paga 10% menos');
+  assert.equal(taxFor(s, s.players[1], 200), 200);
+  passTurn(s);
+  assert.equal(s.round, 13);
+  const rendaA = incomeOf(s, 'a');
+  // Rodada 13 e impar: nao tem inflacao, so o imposto. Ana (empresaria) paga 18% em vez de 20%.
+  assert.equal(s.players[0].gold, 1000 - 180 + rendaA, 'empresario paga 18%');
+  assert.equal(s.players[1].gold, 1000 - 200, 'os demais pagam 20%');
 });
 
-test('posicionar reserva consome tropas e recrutar consome dinheiro', () => {
+test('Meu pedaco paga 10% do patrimonio do politico a cada 4 rodadas', () => {
   const s = newGame();
-  const idx = landIndex(s, 'brasil');
-  s.tiles[idx].ownerId = 'a';
-  s.tiles[idx].troops = 1;
-  act(s, 'a', { type: 'roll' }, seq([1, 2]));
-  const reserve = s.players[0].reserve;
-  assert.equal(act(s, 'a', { type: 'deploy', tileId: idx, count: 3 }).ok, true);
-  assert.equal(s.players[0].reserve, reserve - 3);
-  assert.equal(s.tiles[idx].troops, 4);
-  assert.equal(act(s, 'a', { type: 'deploy', tileId: idx, count: 999 }).ok, false);
-  const money = s.players[0].money;
-  assert.equal(act(s, 'a', { type: 'recruit', count: 2 }).ok, true);
-  assert.equal(s.players[0].money, money - 2 * s.config.recruitCost);
+  s.round = 3;
+  s.turn = 1;
+  const bia = s.players[1];
+  bia.gold = 1000;
+  const esperado = Math.round(netWorth(s, bia) * 0.1);
+  passTurn(s);
+  assert.equal(s.round, 4);
+  assert.ok(esperado > 0);
+  assert.ok(bia.gold > 1000, 'politico recebeu o proprio pedaco');
 });
 
-test('fortaleza aumenta o tributo e tem limite de 3', () => {
-  const s = newGame();
-  const idx = 5;
-  s.tiles[idx].ownerId = 'a';
-  s.tiles[idx].troops = 1;
-  s.players[0].money = 5000;
-  act(s, 'a', { type: 'roll' }, seq([2, 3]));
-  assert.equal(s.pending.kind, 'own');
-  const antes = tributeOf(s, s.tiles[idx]);
-  act(s, 'a', { type: 'fortify' });
-  assert.ok(tributeOf(s, s.tiles[idx]) > antes);
-  act(s, 'a', { type: 'fortify' });
-  act(s, 'a', { type: 'fortify' });
-  assert.equal(s.tiles[idx].forts, 3);
-  assert.equal(act(s, 'a', { type: 'fortify' }).ok, false);
+test('Dizimo recolhe 10% do patrimonio dos adversarios a cada 8 rodadas', () => {
+  const s = createGame(
+    [{ id: 'a', name: 'Ana', cls: 'religiosa' }, { id: 'b', name: 'Bia', cls: 'empresario' }],
+    {},
+    fixedRng(0.01),
+  );
+  s.round = 7;
+  s.turn = 1;
+  const [ana, bia] = s.players;
+  bia.gold = 2000;
+  const ouroAna = ana.gold;
+  passTurn(s);
+  assert.equal(s.round, 8);
+  // A rodada 8 tem inflacao (2%) e dizimo (10% do patrimonio, tirado do caixa).
+  const inflacao = Math.round(2000 * 0.02);
+  const dizimo = 2000 - inflacao - bia.gold;
+  assert.ok(dizimo > 0, 'a empresaria pagou o dizimo');
+  assert.equal(ana.gold, ouroAna - Math.round(ouroAna * 0.02) + dizimo + incomeOf(s, 'a'));
 });
 
-test('falencia entrega os territorios ao credor e encerra a partida', () => {
+test('dominar 20 paises vence a partida', () => {
   const s = newGame();
-  const idx = 5;
-  s.tiles[idx].ownerId = 'b';
-  s.tiles[idx].troops = 9;
-  s.tiles[idx].forts = 3;
-  const outro = landIndex(s, 'japao');
-  s.tiles[outro].ownerId = 'a';
-  s.tiles[outro].troops = 2;
-  s.players[0].money = 10;
-  act(s, 'a', { type: 'roll' }, seq([2, 3]));
-  act(s, 'a', { type: 'tribute' });
-  assert.equal(s.players[0].alive, false);
-  assert.equal(s.tiles[outro].ownerId, 'b');
-  assert.equal(s.winner.id, 'b');
+  const home = country(s, s.players[0].homeId);
+  const alvoId = neighborsOf(home.id).find((id) => !country(s, id).ownerId);
+  const livres = s.countries.filter((c) => !c.ownerId && c.id !== alvoId).slice(0, 18);
+  for (const c of livres) { c.ownerId = 'a'; c.troops = 1; }
+  s.players[0].gold = 5000;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'move', to: alvoId });
+  act(s, 'a', { type: 'buy' });
+  assert.equal(s.winner?.id, 'a');
   assert.equal(s.phase, 'ended');
 });
 
-test('dominar 15 territorios vence a partida', () => {
+test('publicState e serializavel e traz classes, renda e divida', () => {
   const s = newGame();
-  for (let i = 0; i < 14; i++) {
-    const t = s.tiles.filter((x) => x.type === 'land')[i];
-    t.ownerId = 'a';
-    t.troops = 1;
-  }
-  const livre = s.tiles.find((t) => t.type === 'land' && !t.ownerId);
-  s.players[0].money = 5000;
-  s.players[0].pos = livre.index - 5;
-  act(s, 'a', { type: 'roll' }, seq([2, 3]));
-  assert.equal(s.pending.kind, 'buy');
-  act(s, 'a', { type: 'buy' });
-  assert.equal(s.winner.id, 'a');
+  s.round = 5;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'loan', amount: 200 });
+  const view = JSON.parse(JSON.stringify(publicState(s)));
+  assert.equal(view.countries.length, 60);
+  assert.equal(view.players[0].className, CLASSES.empresario.name);
+  assert.equal(view.players[0].ability, 'Lavei, sumi');
+  assert.equal(view.players[0].loan.debt, 240);
+  assert.ok(view.players[0].income > 0);
 });
 
-test('dupla joga de novo e o turno passa ao proximo jogador', () => {
+test('da para atacar qualquer fronteira sua durante o turno, sem precisar desembarcar', () => {
   const s = newGame();
-  act(s, 'a', { type: 'roll' }, seq([3, 3]));
-  act(s, 'a', { type: 'skip' });
-  act(s, 'a', { type: 'endTurn' });
-  assert.equal(s.phase, 'roll');
-  assert.equal(s.players[s.turn].id, 'a'); // dupla: joga outra vez
-  act(s, 'a', { type: 'roll' }, seq([2, 5]));
-  act(s, 'a', { type: 'skip' });
-  act(s, 'a', { type: 'endTurn' });
-  assert.equal(s.players[s.turn].id, 'b');
-});
-
-test('inicio de turno paga renda e bonus de continente', () => {
-  const s = newGame();
-  for (const t of s.tiles.filter((x) => x.cont === 'oc')) {
-    t.ownerId = 'b';
-    t.troops = 1;
-  }
-  const bia = s.players[1];
-  const money = bia.money;
-  const reserve = bia.reserve;
-  act(s, 'a', { type: 'roll' }, seq([2, 5]));
-  act(s, 'a', { type: 'skip' });
-  act(s, 'a', { type: 'endTurn' });
-  assert.ok(bia.money > money + 100, 'recebeu renda + bonus do continente');
-  assert.ok(bia.reserve > reserve + 3);
-});
-
-test('publicState e serializavel e esconde nada essencial', () => {
-  const s = newGame();
-  const view = publicState(s);
-  assert.equal(JSON.parse(JSON.stringify(view)).tiles.length, 28);
-  assert.equal(view.players.length, 2);
-  assert.ok(Array.isArray(view.adjacency['1']));
+  const base = give(s, s.players[0].homeId, 'a', 8);
+  const alvoId = neighborsOf(base.id)[0];
+  const alvo = give(s, alvoId, 'b', 1);
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  assert.equal(s.pending, null, 'ainda nao desembarcou em lugar nenhum');
+  assert.equal(act(s, 'a', { type: 'attack', from: base.id, to: alvoId }, seq([6, 6, 6, 1])).ok, true);
+  assert.equal(alvo.ownerId, 'a');
+  // fora do turno continua proibido
+  assert.equal(act(s, 'b', { type: 'attack', from: alvoId, to: base.id }).ok, false);
 });

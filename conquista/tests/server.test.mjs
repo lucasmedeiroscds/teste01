@@ -23,6 +23,11 @@ test('fluxo completo de sala: criar, entrar, iniciar e jogar', async (t) => {
   assert.equal((await emit(guest, 'joinRoom', { code: 'ZZZZ', name: 'Bia' })).ok, false);
   assert.equal((await emit(guest, 'joinRoom', { code: created.code, name: 'Bia' })).ok, true);
 
+  // Cada jogador escolhe sua classe antes do inicio.
+  assert.equal((await emit(guest, 'setClass', { cls: 'religiosa' })).ok, true);
+  assert.equal((await emit(guest, 'setClass', { cls: 'astronauta' })).ok, false);
+  assert.equal((await emit(host, 'setClass', { cls: 'politico' })).ok, true);
+
   // Convidado nao pode iniciar; anfitriao pode.
   assert.equal((await emit(guest, 'start')).ok, false);
   const roomPromise = once(host, 'room');
@@ -31,7 +36,9 @@ test('fluxo completo de sala: criar, entrar, iniciar e jogar', async (t) => {
   while (!view.game) view = (await once(host, 'room'))[0];
   assert.equal(view.status, 'playing');
   assert.equal(view.game.players.length, 2);
-  assert.equal(view.game.tiles.length, 28);
+  assert.equal(view.game.countries.length, 60);
+  assert.deepEqual(view.game.players.map((p) => p.cls).sort(), ['politico', 'religiosa']);
+  assert.equal(view.game.players.filter((p) => p.lands === 1).length, 2, 'cada um comeca com um pais');
 
   // Apenas o jogador da vez consegue rolar os dados.
   const currentId = view.game.currentId;

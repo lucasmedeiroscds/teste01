@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import express from 'express';
 import { Server } from 'socket.io';
-import { act, createGame, current, publicState, surrender } from './src/game.js';
+import { CLASSES, act, createGame, current, publicState, surrender } from './src/game.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -53,7 +53,8 @@ function roomView(room) {
     code: room.code,
     status: room.status,
     hostId: room.hostId,
-    members: [...room.members.values()].map((m) => ({ id: m.id, name: m.name, online: m.online })),
+    members: [...room.members.values()].map((m) => ({ id: m.id, name: m.name, cls: m.cls, online: m.online })),
+    classes: Object.values(CLASSES),
     maxPlayers: MAX_PLAYERS,
     game: room.game ? publicState(room.game) : null,
   };
@@ -81,7 +82,7 @@ io.on('connection', (socket) => {
 
   socket.on('createRoom', ({ name } = {}, cb) => {
     const room = createRoom(name);
-    const member = { id: token(), token: token(), name: cleanName(name), socketId: socket.id, online: true };
+    const member = { id: token(), token: token(), name: cleanName(name), cls: 'empresario', socketId: socket.id, online: true };
     room.members.set(member.id, member);
     room.hostId = member.id;
     attach(room, member);
@@ -93,10 +94,21 @@ io.on('connection', (socket) => {
     if (!room) return cb?.({ ok: false, error: 'Sala nao encontrada.' });
     if (room.status !== 'lobby') return cb?.({ ok: false, error: 'A partida ja comecou.' });
     if (room.members.size >= MAX_PLAYERS) return cb?.({ ok: false, error: 'Sala cheia.' });
-    const member = { id: token(), token: token(), name: cleanName(name), socketId: socket.id, online: true };
+    const member = { id: token(), token: token(), name: cleanName(name), cls: 'empresario', socketId: socket.id, online: true };
     room.members.set(member.id, member);
     attach(room, member);
     cb?.({ ok: true, code: room.code });
+  });
+
+  socket.on('setClass', ({ cls } = {}, cb) => {
+    const room = findRoom(ctx?.code);
+    const member = room?.members.get(ctx?.playerId);
+    if (!room || !member) return cb?.({ ok: false, error: 'Sala invalida.' });
+    if (room.status !== 'lobby') return cb?.({ ok: false, error: 'A partida ja comecou.' });
+    if (!CLASSES[cls]) return cb?.({ ok: false, error: 'Classe invalida.' });
+    member.cls = cls;
+    broadcast(room);
+    cb?.({ ok: true });
   });
 
   socket.on('rejoin', ({ code, playerId, token: tk } = {}, cb) => {
@@ -113,7 +125,7 @@ io.on('connection', (socket) => {
     if (room.hostId !== ctx.playerId) return cb?.({ ok: false, error: 'Apenas o anfitriao inicia.' });
     if (room.status !== 'lobby') return cb?.({ ok: false, error: 'Partida ja iniciada.' });
     if (room.members.size < 2) return cb?.({ ok: false, error: 'Sao necessarios ao menos 2 jogadores.' });
-    room.game = createGame([...room.members.values()].map((m) => ({ id: m.id, name: m.name })));
+    room.game = createGame([...room.members.values()].map((m) => ({ id: m.id, name: m.name, cls: m.cls })));
     room.status = 'playing';
     broadcast(room);
     cb?.({ ok: true });
