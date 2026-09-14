@@ -16,8 +16,8 @@
   <section class="screen" id="screen-menu">
     <div class="hero">
       <h1>Conquista <span>&amp;</span> Capital</h1>
-      <p class="tagline">Mapa-mundi, 60 maiores economias do planeta. Escolha sua classe, tome um pais,
-        construa industrias e conquiste os vizinhos — War e Banco Imobiliario no mesmo jogo.</p>
+      <p class="tagline">Mapa-mundi, 60 maiores economias do planeta. Escolha sua classe, receba uma missao
+        secreta, construa industrias e invada os vizinhos — War e Banco Imobiliario com deboche geopolitico.</p>
       <div class="card menu-card">
         <label>Seu nome
           <input id="input-name" maxlength="14" placeholder="Ex.: Ana" autocomplete="nickname" />
@@ -73,6 +73,7 @@
 
     <nav class="tabs" id="tabs">
       <button class="tab active" data-tab="acoes">Acoes</button>
+      <button class="tab" data-tab="missao">Missao</button>
       <button class="tab" data-tab="jogadores">Jogadores</button>
       <button class="tab" data-tab="historico">Historico</button>
       <button class="tab" data-tab="chat">Chat</button>
@@ -83,6 +84,9 @@
         <div id="me-bar" class="me-bar"></div>
         <div id="action-box" class="action-box"></div>
         <div id="tile-box" class="tile-box"></div>
+      </div>
+      <div class="tabpane" id="pane-missao">
+        <div id="mission-box"></div>
       </div>
       <div class="tabpane" id="pane-jogadores"><ul class="players" id="game-players"></ul></div>
       <div class="tabpane" id="pane-historico"><ul class="log" id="log"></ul></div>

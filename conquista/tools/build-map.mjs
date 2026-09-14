@@ -53,6 +53,7 @@ for (const [i, c] of selected) {
   out.countries.push({
     id: c.id,
     name: c.name,
+    cont: c.cont,
     rank: c.rank,
     income: c.income,
     price: c.price,

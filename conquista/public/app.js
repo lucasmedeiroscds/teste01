@@ -79,19 +79,28 @@
   const RULES_HTML = `
     <ul>
       <li><b>Classes:</b> <b>Empresario</b> (“Lavei, sumi”) paga 10% a menos de imposto;
-        <b>Politico</b> (“Meu pedaco”) recebe 10% do proprio patrimonio a cada 4 rodadas;
-        <b>Figura religiosa</b> (“Dizimo”) recolhe 10% do patrimonio de cada adversario a cada 8 rodadas.</li>
-      <li><b>Comeco:</b> cada jogador recebe um pais aleatorio. O pais rende de 100 a 400 de ouro por
-        rodada conforme a posicao no ranking mundial de produtividade (1o lugar = 400).</li>
+        <b>Politico</b> (“Meu pedaco”) embolsa 10% do proprio patrimonio a cada 4 rodadas;
+        <b>Figura religiosa</b> (“Dizimo”) recolhe 10% do patrimonio dos outros a cada 8 rodadas;
+        <b>Laranjao</b> (“Testa de ferro”) soma +1 no dado quando invade.</li>
+      <li><b>Missao secreta:</b> cada jogador recebe uma das 50 missoes no inicio, com dois continentes
+        sorteados na mesma carta. Cumprir a missao <i>ou</i> dominar esses dois continentes acaba o jogo.</li>
+      <li><b>Comeco:</b> um pais aleatorio para cada um. O pais rende de 100 a 400 de ouro por rodada
+        conforme a posicao no ranking mundial de produtividade.</li>
       <li><b>Turno:</b> role o dado e ande esse tanto de paises pelas fronteiras (pode parar antes).
-        Onde voce parar: pais livre = comprar; pais seu = construir; pais inimigo = pagar tributo ou guerra.</li>
-      <li><b>Industrias:</b> pequena custa 230 e rende +35/rodada; grande custa 500 e rende +75/rodada,
-        no maximo <b>3 por pais</b> (e ate 2 grandes). Tambem aumentam o tributo e ajudam na defesa.</li>
-      <li><b>Guerra:</b> ataque a partir de um pais seu que faca fronteira com o alvo. 3 dados contra 2,
-        empate favorece quem defende. Zerando as tropas, o pais (e as industrias) mudam de dono.</li>
-      <li><b>Banco:</b> a cada 2 rodadas todos perdem 2% do caixa (inflacao) e a cada 13 rodadas pagam
-        20% de imposto. Emprestimos a partir da rodada 5, teto de 600, um por vez, com juros.</li>
-      <li><b>Vitoria:</b> 20 paises, ser o ultimo em pe, ou o maior patrimonio na rodada 40.</li>
+        Onde parar: pais livre = comprar; pais seu = construir; pais inimigo = pagar tributo ou guerra.</li>
+      <li><b>Guerra (dado de 12):</b> ataque de um pais seu com 2+ tropas contra um vizinho inimigo.
+        Cada lado rola 1d12 e o maior numero leva o pais — empate defende. Perdeu? -1 tropa.
+        Venceu? metade das tropas marcha para o pais conquistado.</li>
+      <li><b>Tropas (estilo War):</b> a cada turno voce recebe paises/2 (minimo 3) mais o bonus de
+        cada continente completo, e distribui onde quiser.</li>
+      <li><b>Industrias:</b> pequena 230 (+35/rodada), grande 500 (+75/rodada), no maximo 3 por pais.
+        Cada uma custa 20% do que rende em <b>manutencao</b> por rodada.</li>
+      <li><b>Banco:</b> inflacao de 2% a cada 2 rodadas; imposto a cada 13 rodadas com <b>aliquota
+        progressiva</b> (10% a 30% conforme o patrimonio); emprestimo a partir da rodada 5, teto 600,
+        um por vez, com juros.</li>
+      <li><b>Cartas de evento:</b> uma vez a cada 20 rodadas (em rodada sorteada) todo mundo compra uma
+        carta — pode salvar ou arruinar.</li>
+      <li><b>Eliminacao:</b> ficou sem nenhum pais, esta fora.</li>
     </ul>`;
   $('#rules-text').innerHTML = RULES_HTML;
 
@@ -312,10 +321,17 @@
     renderMap(g);
     renderStatus(g);
     renderMeBar(g);
+    renderMission(g);
     renderActions(g);
     renderCountryBox(g);
     renderPlayers(g);
     renderLog(g);
+    const minhaCarta = myPlayer()?.card;
+    if (minhaCarta && minhaCarta.id !== renderGame._cardId) {
+      renderGame._cardId = minhaCarta.id;
+      openModal(`Carta de evento — ${minhaCarta.titulo}`,
+        `<p>${minhaCarta.texto}</p><p class="hint">Efeito: ${minhaCarta.resumo || 'nenhum'}.</p>`);
+    }
     if (g.winner && !renderGame._done) {
       renderGame._done = true;
       const w = playerById(g.winner.id);
@@ -339,6 +355,11 @@
       const c = countryById(geo.id);
       const owner = c?.ownerId ? playerById(c.ownerId) : null;
       const path = svgEl('path', { d: geo.path, class: 'country' });
+      const cont = g.continents?.[geo.cont];
+      if (!owner && cont) {
+        path.style.fill = cont.color;
+        path.style.fillOpacity = '0.22';
+      }
       if (owner) {
         // style inline: a regra CSS .country{fill} venceria um atributo fill.
         path.style.fill = owner.color;
@@ -413,8 +434,11 @@
     if (g.combat) {
       const from = countryById(g.combat.from);
       const to = countryById(g.combat.to);
-      linhas.push(`⚔ ${from.name} → ${to.name}: ${g.combat.attRolls.join('-')} x ${g.combat.defRolls.join('-')} • ` +
-        (g.combat.captured ? 'conquistado!' : `atacante -${g.combat.attLoss} / defensor -${g.combat.defLoss}`));
+      const ataque = g.combat.bonus
+        ? `${g.combat.attDie}+${g.combat.bonus}=${g.combat.attTotal}`
+        : `${g.combat.attDie}`;
+      linhas.push(`⚔ ${from.name} → ${to.name}: ${ataque} x ${g.combat.defDie} • ` +
+        (g.combat.captured ? `conquistado (${g.combat.moved} tropas marcharam)` : 'defesa segurou, -1 tropa'));
     }
     if (g.phase === 'move' && isMyTurn()) {
       linhas.push(`Passos restantes: ${g.moves} — toque num pais vizinho destacado`);
@@ -432,12 +456,16 @@
     if (!p) return;
     const chips = [
       ['Caixa', gold(p.gold)],
-      ['Renda', `+${p.income}/rodada`],
-      ['Paises', `${p.lands}/${g.config.targetCountries}`],
+      ['Renda liquida', `+${p.income}/rodada`],
+      ['Manutencao', `-${p.upkeep}/rodada`],
+      ['Paises', `${p.lands}`],
       ['Tropas', `${p.reserve} na reserva`],
       ['Patrimonio', gold(p.worth)],
+      ['Imposto', `${Math.round(p.taxRate * 100)}% na proxima cobranca`],
     ];
+    if (p.attackBonus) chips.push(['Dado de invasao', `+${p.attackBonus}`]);
     if (p.loan) chips.push(['Divida', gold(p.loan.debt)]);
+    if (p.taxFree) chips.push(['Isencao', 'proximo imposto']);
     for (const [k, v] of chips) {
       const chip = el('span', 'chip');
       chip.innerHTML = `${k}: <b>${v}</b>`;
@@ -585,7 +613,8 @@
     const owner = c.ownerId ? playerById(c.ownerId) : null;
     box.append(el('div', 'box-title', c.name));
     box.append(el('div', 'hint',
-      `${c.rank}o no ranking • ${c.income}/rodada • preco ${gold(c.price)} • fronteiras: ${geo.neighbors.length}`));
+      `${g.continents?.[c.cont]?.name || ''} • ${c.rank}o no ranking • ${c.income}/rodada • ` +
+      `preco ${gold(c.price)} • fronteiras: ${geo.neighbors.length}`));
     box.append(el('div', 'hint', owner
       ? `Dono: ${owner.name} • ${c.troops} tropa(s) • industrias ${c.small + c.large}/${g.config.maxFactoriesPerCountry} ` +
         `(${c.small} pequena(s), ${c.large} grande(s)) • tributo ${gold(c.tribute)}`
@@ -625,6 +654,61 @@
     }
   }
 
+  function renderMission(g) {
+    const box = $('#mission-box');
+    box.innerHTML = '';
+    const p = myPlayer();
+    if (!p?.mission) {
+      box.append(el('div', 'hint', 'Sua missao aparece aqui quando a partida comeca.'));
+      return;
+    }
+    const card = el('div', 'card mission');
+    card.append(el('div', 'box-title', 'Missao secreta'));
+    card.append(el('h3', '', p.mission.titulo));
+    card.append(el('p', '', p.mission.texto));
+    card.append(el('div', 'box-title', 'Ou conquiste estes dois continentes'));
+    const row = el('div', 'row');
+    for (const key of p.mission.continentes) {
+      const cont = g.continents[key];
+      const total = g.countries.filter((c) => c.cont === key).length;
+      const meus = g.countries.filter((c) => c.cont === key && c.ownerId === p.id).length;
+      const chip = el('span', 'chip');
+      chip.style.borderColor = cont.color;
+      chip.innerHTML = `${cont.name}: <b>${meus}/${total}</b> (+${cont.bonus} tropas)`;
+      row.append(chip);
+    }
+    card.append(row);
+    card.append(el('div', 'hint',
+      `Reforcos por turno: ${p.reinforcements.total} (${p.reinforcements.base} por paises + ${p.reinforcements.bonus} de continente). ` +
+      `Conquistas na guerra: ${p.conquistas}. Adversarios eliminados: ${p.eliminados}.`));
+    box.append(card);
+
+    if (p.card) {
+      const evento = el('div', 'card');
+      evento.append(el('div', 'box-title', `Ultima carta de evento (${p.card.tipo === 'buff' ? 'a favor' : 'contra'})`));
+      evento.append(el('b', '', p.card.titulo));
+      evento.append(el('p', '', p.card.texto));
+      evento.append(el('div', 'hint', `Efeito: ${p.card.resumo || 'nenhum'}`));
+      box.append(evento);
+    }
+
+    const info = el('div', 'card');
+    info.append(el('div', 'box-title', 'Continentes'));
+    for (const [key, cont] of Object.entries(g.continents)) {
+      const total = g.countries.filter((c) => c.cont === key).length;
+      const donos = new Map();
+      for (const c of g.countries.filter((x) => x.cont === key && x.ownerId)) {
+        donos.set(c.ownerId, (donos.get(c.ownerId) || 0) + 1);
+      }
+      const linha = el('div', 'hint');
+      const dono = [...donos.entries()].sort((a, b) => b[1] - a[1])[0];
+      const nomeDono = dono ? `${playerById(dono[0])?.name} lidera com ${dono[1]}` : 'ninguem por la';
+      linha.innerHTML = `<b style="color:${cont.color}">${cont.name}</b> — ${total} paises, +${cont.bonus} tropas • ${nomeDono}`;
+      info.append(linha);
+    }
+    box.append(info);
+  }
+
   function renderPlayers(g) {
     const ul = $('#game-players');
     ul.innerHTML = '';
@@ -636,7 +720,8 @@
       li.append(dot, el('span', 'grow',
         `${p.name}${p.id === g.currentId ? ' ⏳' : ''}${p.id === me?.playerId ? ' (voce)' : ''}\n${p.className} — “${p.ability}”`));
       const meta = el('span', 'meta');
-      meta.innerHTML = `${gold(p.gold)}<br>${p.lands} paises • +${p.income}/rodada${p.loan ? `<br>divida ${p.loan.debt}` : ''}`;
+      meta.innerHTML = `${gold(p.gold)}<br>${p.lands} paises • +${p.income}/rodada` +
+        `<br>${p.conquistas} conquista(s)${p.loan ? ` • divida ${p.loan.debt}` : ''}`;
       li.append(meta);
       ul.append(li);
     }

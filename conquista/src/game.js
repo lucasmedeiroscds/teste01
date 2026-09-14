@@ -1,9 +1,11 @@
 // Motor de regras de "Conquista & Capital" (servidor autoritativo, sem I/O).
-// Mapa-mundi com as 60 maiores economias: cada pais rende ouro por rodada conforme a
-// posicao no ranking de produtividade, e os jogadores escolhem uma classe (empresario,
-// politico ou figura religiosa) com uma habilidade propria.
+// Mapa-mundi com as 60 maiores economias, classes com habilidade, economia com
+// manutencao e imposto progressivo, combate em dado de 12 e missoes secretas.
 
+import { CONTINENTS, countriesOfContinent } from './countries.js';
 import { ADJACENCY, MAP_COUNTRIES } from './map.js';
+import { MISSIONS } from './missions.js';
+import { EVENT_CARDS } from './cards.js';
 
 export const PLAYER_COLORS = ['#f43f5e', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#06b6d4'];
 
@@ -12,36 +14,50 @@ export const CLASSES = {
     id: 'empresario',
     name: 'Empresario',
     ability: 'Lavei, sumi',
-    desc: 'Paga 10% a menos em todo imposto cobrado pelo banco.',
+    desc: 'Paga 10% a menos de imposto. O contador e criativo, o juiz e amigo.',
   },
   politico: {
     id: 'politico',
     name: 'Politico',
     ability: 'Meu pedaco',
-    desc: 'A cada 4 rodadas recebe 10% do proprio patrimonio.',
+    desc: 'A cada 4 rodadas embolsa 10% do proprio patrimonio. Emenda parlamentar, ora.',
   },
   religiosa: {
     id: 'religiosa',
     name: 'Figura religiosa',
     ability: 'Dizimo',
-    desc: 'A cada 8 rodadas recebe 10% do patrimonio de cada outro jogador.',
+    desc: 'A cada 8 rodadas recolhe 10% do patrimonio dos outros. Fe que move o caixa.',
+  },
+  laranjao: {
+    id: 'laranjao',
+    name: 'Laranjao',
+    ability: 'Testa de ferro',
+    desc: '+1 no dado quando invade os outros. O nome no contrato nunca e o seu.',
   },
 };
 
 export const RULES = {
   startGold: 1000,
   startTroops: 5,
-  minReinforcements: 2,
+  minReinforcements: 3, // reforcos do War: max(3, paises/2) + bonus de continente
   recruitCost: 100,
   factories: {
     small: { cost: 230, income: 35, label: 'Industria pequena', max: 3 },
     large: { cost: 500, income: 75, label: 'Industria grande', max: 2 },
   },
-  maxFactoriesPerCountry: 3, // teto somando pequenas e grandes
+  maxFactoriesPerCountry: 3,
+  factoryUpkeepRate: 0.2, // manutencao por rodada: 20% do que a industria rende
   inflationEvery: 2,
   inflationRate: 0.02,
   bankTaxEvery: 13,
-  bankTaxRate: 0.2,
+  // Imposto progressivo: a aliquota sobe conforme o patrimonio do jogador.
+  taxBrackets: [
+    [5_000, 0.1],
+    [15_000, 0.15],
+    [40_000, 0.2],
+    [100_000, 0.25],
+    [Infinity, 0.3],
+  ],
   taxDiscount: 0.1, // habilidade do empresario
   politicianEvery: 4,
   politicianRate: 0.1,
@@ -49,80 +65,26 @@ export const RULES = {
   titheRate: 0.1,
   loanMax: 600,
   loanFromRound: 5,
-  loanInterest: 0.2, // juros fixos na contratacao
-  loanInterestEvery: 5, // rodadas ate incidir juros sobre o saldo devedor
+  loanInterest: 0.2,
+  loanInterestEvery: 5,
   loanInterestRate: 0.1,
   tributePerTroop: 10,
   tributePerSmall: 30,
   tributePerLarge: 60,
-  targetCountries: 20,
-  maxRounds: 40,
+  combatDie: 12, // combate: 1d12 de cada lado, maior leva o pais
+  invasionBonus: 1, // bonus do laranjao
+  eventWindow: 20, // em algum momento de cada 20 rodadas todos compram uma carta
+  objectiveContinentsMin: 8, // tamanho combinado dos dois continentes da carta
+  objectiveContinentsMax: 16,
+  maxRounds: 40, // rede de seguranca: no fim vence o maior patrimonio
 };
 
 const defaultRng = () => Math.random();
-const rollDie = (rng) => 1 + Math.floor(rng() * 6);
+const rollDie = (rng, faces = 6) => 1 + Math.floor(rng() * faces);
 const fail = (msg) => ({ ok: false, error: msg });
 const okRes = (extra = {}) => ({ ok: true, ...extra });
 const pct = (value, rate) => Math.round(value * rate);
-
-export function createGame(playersInput, options = {}, rng = defaultRng) {
-  const countries = MAP_COUNTRIES.map((c) => ({
-    id: c.id,
-    name: c.name,
-    rank: c.rank,
-    income: c.income,
-    price: c.price,
-    ownerId: null,
-    troops: 0,
-    small: 0,
-    large: 0,
-  }));
-  const state = {
-    countries,
-    players: [],
-    turn: 0,
-    round: 1,
-    phase: 'roll',
-    dice: null,
-    moves: 0,
-    pending: null,
-    combat: null,
-    log: [],
-    events: [],
-    winner: null,
-    config: { ...RULES, ...options },
-  };
-
-  // Cada jogador comeca com um pais aleatorio do mapa.
-  const pool = countries.map((c) => c.id);
-  state.players = playersInput.map((p, i) => {
-    const pick = pool.splice(Math.floor(rng() * pool.length), 1)[0];
-    const home = countries.find((c) => c.id === pick);
-    home.ownerId = p.id;
-    home.troops = state.config.startTroops;
-    return {
-      id: p.id,
-      name: p.name,
-      cls: CLASSES[p.cls] ? p.cls : 'empresario',
-      color: PLAYER_COLORS[i % PLAYER_COLORS.length],
-      gold: state.config.startGold,
-      reserve: 3,
-      pos: home.id,
-      alive: true,
-      loan: null,
-      homeId: home.id,
-    };
-  });
-
-  pushLog(state, `Partida iniciada com ${state.players.length} jogadores no mapa-mundi.`);
-  for (const p of state.players) {
-    const home = byCountry(state, p.pos);
-    pushLog(state, `${p.name} (${CLASSES[p.cls].name}) comeca em ${home.name} — ${home.income} ouro/rodada.`);
-  }
-  grantIncome(state, current(state));
-  pushLog(state, `Rodada 1: vez de ${current(state).name}.`);
-  return state;
-}
+const pick = (arr, rng) => arr[Math.floor(rng() * arr.length)];
 
 // ---------------------------------------------------------------- utilidades
 
@@ -140,14 +102,33 @@ export function neighborsOf(countryId) {
   return ADJACENCY.get(countryId) || [];
 }
 
-/** Ouro por rodada de um jogador: paises + industrias. */
-export function incomeOf(s, playerId) {
+/** Continentes totalmente controlados por um jogador. */
+export function continentsOf(s, playerId) {
+  return Object.keys(CONTINENTS).filter((key) => {
+    const ids = countriesOfContinent(key);
+    return ids.every((id) => byCountry(s, id)?.ownerId === playerId);
+  });
+}
+
+/** Renda bruta por rodada (paises + industrias). */
+export function grossIncomeOf(s, playerId) {
   const f = s.config.factories;
   return ownedBy(s, playerId).reduce(
     (sum, c) => sum + c.income + c.small * f.small.income + c.large * f.large.income,
     0,
   );
 }
+
+/** Manutencao das industrias por rodada. */
+export function upkeepOf(s, playerId) {
+  const f = s.config.factories;
+  return ownedBy(s, playerId).reduce(
+    (sum, c) => sum + Math.round((c.small * f.small.income + c.large * f.large.income) * s.config.factoryUpkeepRate),
+    0,
+  );
+}
+
+export const incomeOf = (s, playerId) => grossIncomeOf(s, playerId) - upkeepOf(s, playerId);
 
 /** Patrimonio: caixa + paises + industrias + tropas - divida. */
 export function netWorth(s, player) {
@@ -169,11 +150,98 @@ export function tributeOf(s, country) {
   );
 }
 
-/** Imposto devido pelo jogador, ja com a habilidade "Lavei, sumi" do empresario. */
-export function taxFor(s, player, amount) {
-  const raw = Math.max(0, Math.round(amount));
-  if (player.cls !== 'empresario') return raw;
-  return Math.round(raw * (1 - s.config.taxDiscount));
+/** Aliquota do imposto, que sobe junto com o patrimonio do jogador. */
+export function taxRateFor(s, player) {
+  const worth = netWorth(s, player);
+  const faixa = s.config.taxBrackets.find(([limite]) => worth <= limite);
+  return faixa ? faixa[1] : s.config.taxBrackets[s.config.taxBrackets.length - 1][1];
+}
+
+/** Imposto devido, ja com a faixa de patrimonio e a habilidade do empresario. */
+export function taxFor(s, player) {
+  if (player.taxFree) return 0;
+  const bruto = Math.max(0, Math.round(player.gold * taxRateFor(s, player)));
+  return player.cls === 'empresario' ? Math.round(bruto * (1 - s.config.taxDiscount)) : bruto;
+}
+
+/** Bonus do jogador no dado de invasao (classe + cartas). */
+export function attackBonus(s, player) {
+  let bonus = player.cls === 'laranjao' ? s.config.invasionBonus : 0;
+  if (player.diceBonus && s.round <= player.diceBonus.until) bonus += player.diceBonus.bonus;
+  return bonus;
+}
+
+// ------------------------------------------------------------------- missoes
+
+/** Atalhos usados pelos checks das missoes. */
+function missionCtx(s, player) {
+  const lands = ownedBy(s, player.id);
+  const ids = new Set(lands.map((c) => c.id));
+  const completos = continentsOf(s, player.id);
+  return {
+    player,
+    state: s,
+    lands,
+    count: lands.length,
+    gold: player.gold,
+    worth: netWorth(s, player),
+    income: incomeOf(s, player.id),
+    industrias: lands.reduce((a, c) => a + c.small + c.large, 0),
+    tropasNoMapa: lands.reduce((a, c) => a + c.troops, 0),
+    conquistas: player.conquistas,
+    eliminados: player.eliminados,
+    continentesCompletos: completos.length,
+    owns: (id) => ids.has(id),
+    ownsAll: (list) => list.every((id) => ids.has(id)),
+    countIn: (list) => list.filter((id) => ids.has(id)).length,
+    countInRank: (de, ate) => lands.filter((c) => c.rank >= de && c.rank <= ate).length,
+    topRanks: (n) => lands.filter((c) => c.rank <= n).length >= n,
+    landsCom: (fn) => lands.filter(fn).length,
+    contFull: (key) => completos.includes(key),
+    contCount: (key) => lands.filter((c) => c.cont === key).length,
+    continentesTocados: () => new Set(lands.map((c) => c.cont)).size,
+    maiorFatiaFora: () => {
+      const fora = Object.keys(CONTINENTS).filter((k) => !completos.includes(k));
+      return Math.max(0, ...fora.map((k) => lands.filter((c) => c.cont === k).length));
+    },
+    maiorBlocoConexo: () => {
+      let maior = 0;
+      const vistos = new Set();
+      for (const inicio of ids) {
+        if (vistos.has(inicio)) continue;
+        let tamanho = 0;
+        const fila = [inicio];
+        vistos.add(inicio);
+        while (fila.length) {
+          const atual = fila.pop();
+          tamanho++;
+          for (const viz of neighborsOf(atual)) {
+            if (ids.has(viz) && !vistos.has(viz)) { vistos.add(viz); fila.push(viz); }
+          }
+        }
+        maior = Math.max(maior, tamanho);
+      }
+      return maior;
+    },
+    segundoColocado: () => Math.max(0, ...s.players
+      .filter((p) => p.alive && p.id !== player.id)
+      .map((p) => ownedBy(s, p.id).length)),
+  };
+}
+
+/** Sorteia dois continentes cujo tamanho somado fica numa faixa jogavel. */
+function drawObjectiveContinents(s, rng) {
+  const keys = Object.keys(CONTINENTS);
+  const pares = [];
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      const total = countriesOfContinent(keys[i]).length + countriesOfContinent(keys[j]).length;
+      if (total >= s.config.objectiveContinentsMin && total <= s.config.objectiveContinentsMax) {
+        pares.push([keys[i], keys[j]]);
+      }
+    }
+  }
+  return pick(pares, rng);
 }
 
 // ------------------------------------------------------------------ economia
@@ -209,26 +277,175 @@ function eliminate(s, player, creditor, reason) {
     }
   }
   player.reserve = 0;
+  if (creditor && creditor.alive) creditor.eliminados += 1;
   pushLog(
     s,
     creditor
-      ? `${player.name} quebrou (${reason}): ${creditor.name} assume ${lands.length} pais(es).`
-      : `${player.name} quebrou (${reason}) e saiu do jogo.`,
+      ? `${player.name} foi eliminado (${reason}): ${creditor.name} fica com ${lands.length} pais(es).`
+      : `${player.name} foi eliminado (${reason}).`,
     'bad',
   );
 }
 
-function grantIncome(s, player) {
-  const gold = incomeOf(s, player.id);
-  const lands = ownedBy(s, player.id).length;
-  const troops = Math.max(s.config.minReinforcements, Math.floor(lands / 3));
-  player.gold += gold;
-  player.reserve += troops;
-  pushLog(s, `${player.name} arrecada ${gold} de ouro e ${troops} tropa(s).`);
+/** Reforcos no estilo War: paises/2 (minimo 3) + bonus dos continentes completos. */
+export function reinforcementsFor(s, playerId) {
+  const lands = ownedBy(s, playerId).length;
+  const base = Math.max(s.config.minReinforcements, Math.floor(lands / 2));
+  const bonus = continentsOf(s, playerId).reduce((a, k) => a + CONTINENTS[k].bonus, 0);
+  return { base, bonus, total: base + bonus };
 }
 
-/** Eventos que valem para todo mundo e acontecem em rodadas especificas. */
-function applyRoundEvents(s) {
+function grantIncome(s, player) {
+  const bruto = grossIncomeOf(s, player.id);
+  const manutencao = upkeepOf(s, player.id);
+  const liquido = bruto - manutencao;
+  const reforcos = reinforcementsFor(s, player.id);
+  player.gold += liquido;
+  player.reserve += reforcos.total;
+  pushLog(
+    s,
+    `${player.name} arrecada ${liquido} de ouro (${bruto} - ${manutencao} de manutencao) e ` +
+      `${reforcos.total} tropa(s)${reforcos.bonus ? ` (${reforcos.base} + ${reforcos.bonus} de continente)` : ''}.`,
+  );
+}
+
+// -------------------------------------------------------------- cartas de evento
+
+/** Aplica uma carta de evento a um jogador. */
+export function applyCard(s, player, card, rng = defaultRng) {
+  const lands = ownedBy(s, player.id);
+  const partes = [];
+  if (card.gold) {
+    if (card.gold > 0) { player.gold += card.gold; partes.push(`+${card.gold} de ouro`); }
+    else { payDebt(s, player, -card.gold, null); partes.push(`${card.gold} de ouro`); }
+  }
+  if (card.goldPct) {
+    const v = pct(player.gold, Math.abs(card.goldPct));
+    if (card.goldPct > 0) { player.gold += v; partes.push(`+${v} de ouro`); }
+    else { payDebt(s, player, v, null); partes.push(`-${v} de ouro`); }
+  }
+  if (card.worthPct) {
+    const v = pct(netWorth(s, player), Math.abs(card.worthPct));
+    if (card.worthPct > 0) { player.gold += v; partes.push(`+${v} de ouro`); }
+    else { payDebt(s, player, v, null); partes.push(`-${v} de ouro`); }
+  }
+  if (card.troops) {
+    player.reserve = Math.max(0, player.reserve + card.troops);
+    partes.push(`${card.troops > 0 ? '+' : ''}${card.troops} tropa(s) na reserva`);
+  }
+  if (card.troopsCountry && lands.length) {
+    const alvo = [...lands].sort((a, b) => b.income - a.income)[0];
+    alvo.troops += card.troopsCountry;
+    partes.push(`+${card.troopsCountry} tropa(s) em ${alvo.name}`);
+  }
+  if (card.loseTroops && lands.length) {
+    const alvo = [...lands].sort((a, b) => b.troops - a.troops)[0];
+    const perde = Math.min(card.loseTroops, Math.max(0, alvo.troops - 1));
+    alvo.troops -= perde;
+    partes.push(`-${perde} tropa(s) em ${alvo.name}`);
+  }
+  if (card.factory) {
+    const alvo = lands.find((c) => c.small + c.large < s.config.maxFactoriesPerCountry);
+    if (alvo) { alvo.small += 1; partes.push(`industria pequena em ${alvo.name}`); }
+  }
+  if (card.loseFactory) {
+    const alvo = lands.find((c) => c.large > 0) || lands.find((c) => c.small > 0);
+    if (alvo) {
+      if (alvo.large > 0) alvo.large -= 1; else alvo.small -= 1;
+      partes.push(`perdeu uma industria em ${alvo.name}`);
+    }
+  }
+  if (card.forgiveLoan && player.loan) { player.loan = null; partes.push('divida perdoada'); }
+  if (card.debt) {
+    player.loan = player.loan
+      ? { ...player.loan, debt: player.loan.debt + card.debt }
+      : { principal: 0, debt: card.debt, takenAt: s.round };
+    partes.push(`divida +${card.debt}`);
+  }
+  if (card.diceBonus) {
+    player.diceBonus = { bonus: card.diceBonus.bonus, until: s.round + card.diceBonus.rounds };
+    partes.push(`${card.diceBonus.bonus > 0 ? '+' : ''}${card.diceBonus.bonus} no dado ate a rodada ${player.diceBonus.until}`);
+  }
+  if (card.taxFree) { player.taxFree = true; partes.push('isento do proximo imposto'); }
+  if (card.stealEach) {
+    let total = 0;
+    for (const outro of s.players) {
+      if (outro.id === player.id || !outro.alive) continue;
+      const v = Math.min(outro.gold, card.stealEach);
+      outro.gold -= v;
+      total += v;
+    }
+    player.gold += total;
+    partes.push(`+${total} tirado dos adversarios`);
+  }
+  if (card.payEach) {
+    for (const outro of s.players) {
+      if (outro.id === player.id || !outro.alive) continue;
+      const v = Math.min(player.gold, card.payEach);
+      player.gold -= v;
+      outro.gold += v;
+    }
+    partes.push(`pagou ${card.payEach} a cada adversario`);
+  }
+  player.card = { ...card, resumo: partes.join(', ') };
+  pushLog(s, `Carta (${player.name}) — ${card.titulo}: ${card.texto} [${partes.join(', ') || 'sem efeito'}]`,
+    card.tipo === 'buff' ? 'good' : 'bad');
+  return player.card;
+}
+
+function drawEventCards(s, rng) {
+  s.events = [];
+  for (const p of s.players.filter((x) => x.alive)) {
+    applyCard(s, p, pick(EVENT_CARDS, rng), rng);
+  }
+  s.events.push({ kind: 'cartas', text: 'Rodada de cartas de evento: todo mundo comprou uma.' });
+  // Proxima leva em algum momento das proximas 20 rodadas.
+  s.nextEventRound = s.round + 1 + Math.floor(rng() * s.config.eventWindow);
+}
+
+// -------------------------------------------------------------------- turnos
+
+function checkVictory(s) {
+  const alive = s.players.filter((p) => p.alive);
+  if (!alive.length) { s.phase = 'ended'; s.winner = null; return true; }
+  for (const p of alive) {
+    const ctx = missionCtx(s, p);
+    if (p.mission && MISSIONS.find((m) => m.id === p.mission.id)?.check(ctx)) {
+      s.winner = { id: p.id, reason: `Cumpriu a missao: ${p.mission.titulo}`, mission: p.mission };
+      break;
+    }
+    const alvos = p.mission?.continentes || [];
+    if (alvos.length === 2 && alvos.every((k) => ctx.contFull(k))) {
+      s.winner = {
+        id: p.id,
+        reason: `Conquistou ${alvos.map((k) => CONTINENTS[k].name).join(' e ')}`,
+      };
+      break;
+    }
+  }
+  if (!s.winner && alive.length === 1) s.winner = { id: alive[0].id, reason: 'Ultimo jogador em pe' };
+  if (!s.winner && s.round > s.config.maxRounds) {
+    const best = [...alive].sort((a, b) => netWorth(s, b) - netWorth(s, a))[0];
+    s.winner = { id: best.id, reason: 'Maior patrimonio ao fim das rodadas' };
+  }
+  if (s.winner) {
+    s.phase = 'ended';
+    s.pending = null;
+    pushLog(s, `${byId(s, s.winner.id).name} venceu: ${s.winner.reason}.`, 'good');
+  }
+  return !!s.winner;
+}
+
+/** Quem ficou sem nenhum pais esta fora do jogo. */
+function checkEliminations(s, culpado = null) {
+  for (const p of s.players) {
+    if (p.alive && !ownedBy(s, p.id).length) {
+      eliminate(s, p, culpado && culpado.id !== p.id ? culpado : null, 'ficou sem nenhum pais');
+    }
+  }
+}
+
+function applyRoundEvents(s, rng) {
   const cfg = s.config;
   const round = s.round;
   const alive = () => s.players.filter((p) => p.alive);
@@ -238,29 +455,32 @@ function applyRoundEvents(s) {
     for (const p of alive()) {
       const loss = pct(p.gold, cfg.inflationRate);
       p.gold -= loss;
-      if (loss) pushLog(s, `Inflacao: ${p.name} perde ${loss} de ouro (${cfg.inflationRate * 100}% do caixa).`, 'warn');
+      if (loss) pushLog(s, `Inflacao: ${p.name} perde ${loss} de ouro.`, 'warn');
     }
     s.events.push({ kind: 'inflacao', text: `Inflacao: -${cfg.inflationRate * 100}% do caixa de todos.` });
   }
 
   if (round % cfg.bankTaxEvery === 0) {
     for (const p of alive()) {
-      const due = taxFor(s, p, p.gold * cfg.bankTaxRate);
+      const aliquota = taxRateFor(s, p);
+      const due = taxFor(s, p);
       p.gold -= due;
       pushLog(
         s,
-        `Imposto do banco: ${p.name} paga ${due} de ouro${p.cls === 'empresario' ? ' (Lavei, sumi: -10%)' : ''}.`,
+        `Imposto (faixa de ${Math.round(aliquota * 100)}% do patrimonio): ${p.name} paga ${due} de ouro` +
+          `${p.taxFree ? ' — isento pela carta' : ''}${p.cls === 'empresario' && !p.taxFree ? ' (Lavei, sumi: -10%)' : ''}.`,
         'bad',
       );
+      p.taxFree = false;
     }
-    s.events.push({ kind: 'imposto', text: `Imposto do banco: ${cfg.bankTaxRate * 100}% do caixa de todos.` });
+    s.events.push({ kind: 'imposto', text: 'Imposto do banco: aliquota progressiva sobre o patrimonio.' });
   }
 
   if (round % cfg.politicianEvery === 0) {
     for (const p of alive().filter((x) => x.cls === 'politico')) {
       const gain = pct(netWorth(s, p), cfg.politicianRate);
       p.gold += gain;
-      pushLog(s, `Meu pedaco: ${p.name} desvia ${gain} de ouro (10% do proprio patrimonio).`, 'good');
+      pushLog(s, `Meu pedaco: ${p.name} desvia ${gain} de ouro.`, 'good');
     }
   }
 
@@ -274,7 +494,7 @@ function applyRoundEvents(s) {
         total += due;
       }
       pastor.gold += total;
-      pushLog(s, `Dizimo: ${pastor.name} recolhe ${total} de ouro dos demais jogadores.`, 'good');
+      pushLog(s, `Dizimo: ${pastor.name} recolhe ${total} de ouro dos demais.`, 'good');
     }
   }
 
@@ -285,37 +505,12 @@ function applyRoundEvents(s) {
       pushLog(s, `Juros: a divida de ${p.name} sobe ${juros} (saldo ${p.loan.debt}).`, 'warn');
     }
   }
+
+  if (round >= s.nextEventRound) drawEventCards(s, rng);
 }
 
-// -------------------------------------------------------------------- turnos
-
-function checkVictory(s) {
-  const alive = s.players.filter((p) => p.alive);
-  if (!alive.length) {
-    s.winner = null;
-    s.phase = 'ended';
-    return true;
-  }
-  if (alive.length === 1) {
-    s.winner = { id: alive[0].id, reason: 'Ultimo jogador em pe' };
-  } else {
-    const dominator = alive.find((p) => ownedBy(s, p.id).length >= s.config.targetCountries);
-    if (dominator) {
-      s.winner = { id: dominator.id, reason: `Controla ${s.config.targetCountries}+ paises` };
-    } else if (s.round > s.config.maxRounds) {
-      const best = [...alive].sort((a, b) => netWorth(s, b) - netWorth(s, a))[0];
-      s.winner = { id: best.id, reason: 'Maior patrimonio ao fim das rodadas' };
-    }
-  }
-  if (s.winner) {
-    s.phase = 'ended';
-    s.pending = null;
-    pushLog(s, `${byId(s, s.winner.id).name} venceu: ${s.winner.reason}.`, 'good');
-  }
-  return !!s.winner;
-}
-
-function nextTurn(s) {
+function nextTurn(s, rng) {
+  checkEliminations(s);
   if (checkVictory(s)) return;
   s.pending = null;
   s.combat = null;
@@ -326,14 +521,10 @@ function nextTurn(s) {
     s.turn = (s.turn + 1) % s.players.length;
     if (s.turn === 0) {
       s.round += 1;
-      applyRoundEvents(s);
+      applyRoundEvents(s, rng);
     }
   } while (!s.players[s.turn].alive && guard++ < s.players.length * 2);
-  for (const p of s.players) {
-    if (p.alive && !ownedBy(s, p.id).length && p.gold < 320) {
-      eliminate(s, p, null, 'ficou sem paises e sem caixa');
-    }
-  }
+  checkEliminations(s);
   if (checkVictory(s)) return;
   s.phase = 'roll';
   const p = current(s);
@@ -341,14 +532,89 @@ function nextTurn(s) {
   pushLog(s, `Rodada ${s.round}: vez de ${p.name}.`);
 }
 
-export function surrender(s, playerId) {
+export function surrender(s, playerId, rng = defaultRng) {
   const p = byId(s, playerId);
   if (!p || !p.alive || s.phase === 'ended') return fail('Jogador indisponivel.');
   pushLog(s, `${p.name} desistiu.`, 'bad');
   eliminate(s, p, null, 'desistiu da partida');
-  if (current(s).id === playerId) nextTurn(s);
+  if (current(s).id === playerId) nextTurn(s, rng);
   else checkVictory(s);
   return okRes();
+}
+
+// ------------------------------------------------------------------- partida
+
+export function createGame(playersInput, options = {}, rng = defaultRng) {
+  const countries = MAP_COUNTRIES.map((c) => ({
+    id: c.id,
+    name: c.name,
+    cont: c.cont,
+    rank: c.rank,
+    income: c.income,
+    price: c.price,
+    ownerId: null,
+    troops: 0,
+    small: 0,
+    large: 0,
+  }));
+  const state = {
+    countries,
+    players: [],
+    turn: 0,
+    round: 1,
+    phase: 'roll',
+    dice: null,
+    moves: 0,
+    pending: null,
+    combat: null,
+    log: [],
+    events: [],
+    winner: null,
+    config: { ...RULES, ...options },
+  };
+  state.nextEventRound = 2 + Math.floor(rng() * state.config.eventWindow);
+
+  const pool = countries.map((c) => c.id);
+  const missoes = [...MISSIONS];
+  state.players = playersInput.map((p, i) => {
+    const pickId = pool.splice(Math.floor(rng() * pool.length), 1)[0];
+    const home = countries.find((c) => c.id === pickId);
+    home.ownerId = p.id;
+    home.troops = state.config.startTroops;
+    const mission = missoes.splice(Math.floor(rng() * missoes.length), 1)[0];
+    return {
+      id: p.id,
+      name: p.name,
+      cls: CLASSES[p.cls] ? p.cls : 'empresario',
+      color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+      gold: state.config.startGold,
+      reserve: 3,
+      pos: home.id,
+      alive: true,
+      loan: null,
+      homeId: home.id,
+      conquistas: 0,
+      eliminados: 0,
+      taxFree: false,
+      diceBonus: null,
+      card: null,
+      mission: {
+        id: mission.id,
+        titulo: mission.titulo,
+        texto: mission.texto,
+        continentes: drawObjectiveContinents(state, rng),
+      },
+    };
+  });
+
+  pushLog(state, `Partida iniciada com ${state.players.length} jogadores no mapa-mundi.`);
+  for (const p of state.players) {
+    const home = byCountry(state, p.pos);
+    pushLog(state, `${p.name} (${CLASSES[p.cls].name}) comeca em ${home.name} — ${home.income} ouro/rodada.`);
+  }
+  grantIncome(state, current(state));
+  pushLog(state, `Rodada 1: vez de ${current(state).name}.`);
+  return state;
 }
 
 // ---------------------------------------------------------------- movimentos
@@ -429,6 +695,7 @@ function doTribute(s, player) {
   s.pending = null;
   pushLog(s, `${player.name} paga ${amount} de tributo a ${owner.name}.`);
   payDebt(s, player, amount, owner);
+  checkEliminations(s, owner);
   checkVictory(s);
   return okRes();
 }
@@ -446,11 +713,14 @@ function doBuild(s, player, action) {
   if (player.gold < spec.cost) return fail('Ouro insuficiente.');
   player.gold -= spec.cost;
   country[size] += 1;
+  const manutencao = Math.round(spec.income * s.config.factoryUpkeepRate);
   pushLog(
     s,
-    `${player.name} constroi uma ${spec.label.toLowerCase()} em ${country.name} (-${spec.cost}, +${spec.income}/rodada).`,
+    `${player.name} constroi uma ${spec.label.toLowerCase()} em ${country.name} ` +
+      `(-${spec.cost}, +${spec.income}/rodada, -${manutencao} de manutencao).`,
     'good',
   );
+  checkVictory(s);
   return okRes();
 }
 
@@ -463,6 +733,7 @@ function doDeploy(s, player, action) {
   player.reserve -= count;
   country.troops += count;
   pushLog(s, `${player.name} posiciona ${count} tropa(s) em ${country.name}.`);
+  checkVictory(s);
   return okRes();
 }
 
@@ -502,62 +773,70 @@ function doRepay(s, player, action) {
   } else {
     pushLog(s, `${player.name} paga ${amount} ao banco (restam ${player.loan.debt}).`);
   }
+  checkVictory(s);
   return okRes();
 }
 
+/**
+ * Combate: cada lado rola 1d12 e o maior numero leva o pais (empate defende).
+ * O laranjao soma +1 ao invadir, e cartas podem somar ou tirar mais.
+ */
 function doAttack(s, player, action, rng) {
-  // Duas formas de atacar: ao desembarcar num pais inimigo (invasao) ou, a qualquer
-  // momento do seu turno, a partir de uma fronteira sua — como no War.
   const invasao = s.pending?.kind === 'enemy';
   if (!invasao && s.phase !== 'action' && s.phase !== 'move') return fail('Role o dado primeiro.');
   const from = byCountry(s, action.from);
   const target = invasao ? byCountry(s, s.pending.countryId) : byCountry(s, action.to);
   if (!from || from.ownerId !== player.id) return fail('Origem invalida.');
-  if (!target || !target.ownerId || target.ownerId === player.id) return fail('Alvo precisa ser inimigo.');
+  if (!target || !target.ownerId) return fail('Alvo precisa ser inimigo.');
+  if (target.ownerId === player.id) return fail('Alvo precisa ser inimigo.');
   if (from.troops < 2) return fail('Precisa de pelo menos 2 tropas na origem.');
   if (!neighborsOf(from.id).includes(target.id)) return fail('Sem fronteira com o alvo.');
 
-  const attCount = Math.min(3, from.troops - 1);
-  const defCount = Math.max(1, Math.min(2, target.troops));
-  const bonus = Math.min(2, target.small + target.large * 2); // industrias defendem o territorio
-  const attRolls = Array.from({ length: attCount }, () => rollDie(rng)).sort((a, b) => b - a);
-  const defRolls = Array.from({ length: defCount }, () => rollDie(rng))
-    .map((d) => Math.min(6, d + bonus))
-    .sort((a, b) => b - a);
+  const defender = byId(s, target.ownerId);
+  const bonus = attackBonus(s, player);
+  const attDie = rollDie(rng, s.config.combatDie);
+  const defDie = rollDie(rng, s.config.combatDie);
+  const attTotal = attDie + bonus;
+  const venceu = attTotal > defDie;
 
-  let attLoss = 0;
-  let defLoss = 0;
-  for (let i = 0; i < Math.min(attRolls.length, defRolls.length); i++) {
-    if (attRolls[i] > defRolls[i]) defLoss++;
-    else attLoss++;
-  }
-  from.troops -= attLoss;
-  target.troops = Math.max(0, target.troops - defLoss);
+  s.combat = {
+    from: from.id,
+    to: target.id,
+    attDie,
+    defDie,
+    bonus,
+    attTotal,
+    captured: venceu,
+    attackerId: player.id,
+    defenderId: defender.id,
+  };
 
-  const loser = byId(s, target.ownerId);
-  s.combat = { from: from.id, to: target.id, attRolls, defRolls, attLoss, defLoss, captured: false };
   pushLog(
     s,
-    `Guerra em ${target.name}: ${player.name} [${attRolls.join(',')}] x ${loser.name} [${defRolls.join(',')}] — ` +
-      `atacante perde ${attLoss}, defensor perde ${defLoss}.`,
+    `Guerra em ${target.name}: ${player.name} tira ${attDie}${bonus ? `+${bonus}=${attTotal}` : ''} x ` +
+      `${defDie} de ${defender.name}.`,
     'warn',
   );
 
-  if (target.troops === 0) {
-    const moving = Math.min(from.troops - 1, Math.max(1, attCount));
+  if (venceu) {
+    const moving = Math.max(1, Math.floor(from.troops / 2));
     target.ownerId = player.id;
     target.troops = moving;
     from.troops -= moving;
-    s.combat.captured = true;
+    player.conquistas += 1;
+    s.combat.moved = moving;
+    pushLog(s, `${player.name} conquista ${target.name} e marcha com ${moving} tropa(s).`, 'good');
     if (invasao) s.pending = null;
-    pushLog(s, `${player.name} toma ${target.name} de ${loser.name} (industrias incluidas).`, 'good');
-    if (!ownedBy(s, loser.id).length && loser.gold < 320) eliminate(s, loser, player, 'perdeu o ultimo pais');
-    checkVictory(s);
+    checkEliminations(s, player);
+  } else {
+    from.troops -= 1;
+    pushLog(s, `${defender.name} segura ${target.name}; ${player.name} perde 1 tropa.`, 'bad');
   }
+  checkVictory(s);
   return okRes();
 }
 
-function doEndTurn(s, player) {
+function doEndTurn(s, player, rng) {
   if (s.phase === 'move') {
     s.phase = 'action';
     resolveLanding(s, player);
@@ -567,7 +846,7 @@ function doEndTurn(s, player) {
     return fail('Pague o tributo ou conquiste o pais antes de encerrar o turno.');
   }
   s.pending = null;
-  nextTurn(s);
+  nextTurn(s, rng);
   return okRes();
 }
 
@@ -578,7 +857,13 @@ export function act(state, playerId, action, rng = defaultRng) {
   if (!player || !player.alive) return fail('Jogador fora da partida.');
   if (current(state).id !== playerId) return fail('Nao e a sua vez.');
   const inTurn = state.phase === 'move' || state.phase === 'action';
+  const resultado = resolveAction(state, player, action, rng, inTurn);
+  // Toda acao bem-sucedida pode ter completado uma missao ou um objetivo de continentes.
+  if (resultado.ok && state.phase !== 'ended') checkVictory(state);
+  return resultado;
+}
 
+function resolveAction(state, player, action, rng, inTurn) {
   switch (action.type) {
     case 'roll': return doRoll(state, player, rng);
     case 'move': return doMove(state, player, action);
@@ -595,17 +880,22 @@ export function act(state, playerId, action, rng = defaultRng) {
       if (state.pending && state.pending.kind === 'enemy') return fail('Voce nao pode ignorar o desembarque.');
       state.pending = null;
       return okRes();
-    case 'endTurn': return doEndTurn(state, player);
+    case 'endTurn': return doEndTurn(state, player, rng);
     default: return fail('Acao desconhecida.');
   }
 }
 
-/** Estado serializavel enviado aos clientes. */
-export function publicState(s) {
+/**
+ * Estado enviado aos clientes. A missao e a carta sao segredo: so vao para o dono
+ * (ou para todos quando a partida acaba).
+ */
+export function publicState(s, viewerId = null) {
+  const acabou = s.phase === 'ended';
   return {
     countries: s.countries.map((c) => ({
       id: c.id,
       name: c.name,
+      cont: c.cont,
       rank: c.rank,
       income: c.income,
       price: c.price,
@@ -615,22 +905,38 @@ export function publicState(s) {
       large: c.large,
       tribute: c.ownerId ? tributeOf(s, c) : null,
     })),
-    players: s.players.map((p) => ({
-      id: p.id,
-      name: p.name,
-      cls: p.cls,
-      className: CLASSES[p.cls].name,
-      ability: CLASSES[p.cls].ability,
-      color: p.color,
-      gold: p.gold,
-      reserve: p.reserve,
-      pos: p.pos,
-      alive: p.alive,
-      loan: p.loan,
-      lands: ownedBy(s, p.id).length,
-      income: incomeOf(s, p.id),
-      worth: netWorth(s, p),
-    })),
+    continents: CONTINENTS,
+    players: s.players.map((p) => {
+      const meu = acabou || p.id === viewerId;
+      return {
+        id: p.id,
+        name: p.name,
+        cls: p.cls,
+        className: CLASSES[p.cls].name,
+        ability: CLASSES[p.cls].ability,
+        color: p.color,
+        gold: p.gold,
+        reserve: p.reserve,
+        pos: p.pos,
+        alive: p.alive,
+        loan: p.loan,
+        lands: ownedBy(s, p.id).length,
+        income: incomeOf(s, p.id),
+        gross: grossIncomeOf(s, p.id),
+        upkeep: upkeepOf(s, p.id),
+        worth: netWorth(s, p),
+        taxRate: taxRateFor(s, p),
+        attackBonus: attackBonus(s, p),
+        continents: continentsOf(s, p.id),
+        reinforcements: reinforcementsFor(s, p.id),
+        conquistas: p.conquistas,
+        eliminados: p.eliminados,
+        taxFree: p.taxFree,
+        diceBonus: p.diceBonus,
+        mission: meu ? p.mission : null,
+        card: meu ? p.card : null,
+      };
+    }),
     turn: s.turn,
     currentId: current(s).id,
     round: s.round,
@@ -643,16 +949,21 @@ export function publicState(s) {
     winner: s.winner,
     log: s.log.slice(-40),
     config: {
-      targetCountries: s.config.targetCountries,
       maxRounds: s.config.maxRounds,
       recruitCost: s.config.recruitCost,
       factories: s.config.factories,
       maxFactoriesPerCountry: s.config.maxFactoriesPerCountry,
+      factoryUpkeepRate: s.config.factoryUpkeepRate,
       loanMax: s.config.loanMax,
       loanFromRound: s.config.loanFromRound,
       loanInterest: s.config.loanInterest,
       inflationEvery: s.config.inflationEvery,
       bankTaxEvery: s.config.bankTaxEvery,
+      taxBrackets: s.config.taxBrackets.map(([limite, taxa]) => [limite === Infinity ? null : limite, taxa]),
+      combatDie: s.config.combatDie,
+      eventWindow: s.config.eventWindow,
     },
   };
 }
+
+export { CONTINENTS, MISSIONS, EVENT_CARDS };

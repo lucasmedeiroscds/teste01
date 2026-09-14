@@ -48,7 +48,7 @@ function createRoom(hostName) {
   return room;
 }
 
-function roomView(room) {
+function roomView(room, viewerId = null) {
   return {
     code: room.code,
     status: room.status,
@@ -56,12 +56,16 @@ function roomView(room) {
     members: [...room.members.values()].map((m) => ({ id: m.id, name: m.name, cls: m.cls, online: m.online })),
     classes: Object.values(CLASSES),
     maxPlayers: MAX_PLAYERS,
-    game: room.game ? publicState(room.game) : null,
+    game: room.game ? publicState(room.game, viewerId) : null,
   };
 }
 
+// A missao e as cartas de cada um sao segredo, entao cada jogador recebe a sua propria
+// versao do estado (nada de mandar o mesmo pacote para a sala inteira).
 function broadcast(room) {
-  io.to(room.code).emit('room', roomView(room));
+  for (const member of room.members.values()) {
+    if (member.socketId) io.to(member.socketId).emit('room', roomView(room, member.id));
+  }
 }
 
 function findRoom(code) {
@@ -77,6 +81,7 @@ io.on('connection', (socket) => {
     member.online = true;
     socket.join(room.code);
     socket.emit('joined', { code: room.code, playerId: member.id, token: member.token });
+    socket.emit('room', roomView(room, member.id));
     broadcast(room);
   };
 

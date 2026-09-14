@@ -172,3 +172,9 @@ summary { cursor: pointer; font-weight: 600; }
   .tabs { grid-column: 2; grid-row: 2; }
   .panel { grid-column: 2; grid-row: 3; min-height: 0; }
 }
+
+/* missao e cartas */
+.mission h3 { margin: 4px 0 6px; }
+.mission p { font-size: 14px; color: var(--muted); }
+#mission-box .card { margin-bottom: 10px; }
+#mission-box .hint + .hint { margin-top: 4px; }
