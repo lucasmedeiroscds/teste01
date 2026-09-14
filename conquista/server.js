@@ -2,6 +2,7 @@
 // Express serve o cliente estatico; Socket.IO cuida das salas e do fluxo do jogo.
 
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
@@ -209,7 +210,16 @@ setInterval(() => {
 // Sobe o servidor apenas quando o arquivo e executado diretamente (os testes usam porta propria).
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   server.listen(PORT, () => {
-    console.log(`Conquista & Capital rodando em http://localhost:${PORT}`);
+    console.log(`\n  Conquista & Capital no ar!\n`);
+    console.log(`  Neste computador:  http://localhost:${PORT}`);
+    for (const [nome, infos] of Object.entries(os.networkInterfaces())) {
+      for (const info of infos || []) {
+        if (info.family === 'IPv4' && !info.internal) {
+          console.log(`  Na mesma rede:     http://${info.address}:${PORT}  (${nome} — use no celular)`);
+        }
+      }
+    }
+    console.log(`\n  Abra em duas abas (ou no celular) para jogar. Ctrl+C encerra.\n`);
   });
 }
 
