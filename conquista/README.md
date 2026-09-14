@@ -1,5 +1,8 @@
 # Conquista & Capital
 
+**▶ Jogue agora: <https://teste01-pa6p.onrender.com>** — crie a sala, escolha a classe e
+compartilhe o código de 4 letras (ou o link do convite). Dá para jogar sozinho contra bots.
+
 Jogo de tabuleiro **multiplayer** que roda no navegador (PC e celular) em cima de um
 **mapa-múndi real** com as **60 maiores economias do mundo**. Mistura a conquista
 territorial do **War** (tropas, fronteiras, dados de combate) com a economia do
@@ -194,6 +197,10 @@ tela do celular sem rolagem lateral.
   (antes do ajuste, algumas terminavam na rodada 6).
 
 ## Publicação
+
+Está no ar em <https://teste01-pa6p.onrender.com> (Render, plano gratuito: hiberna após 15
+minutos parado, e a primeira visita depois disso demora ~30s para acordar o serviço; partidas
+em andamento se perdem num restart, porque o estado das salas vive na memória do processo).
 
 O jogo precisa de um processo Node rodando com WebSocket — não funciona em hospedagem
 estática (GitHub Pages) nem em funções serverless (Vercel), onde não há conexão persistente

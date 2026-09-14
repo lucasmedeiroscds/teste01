@@ -1,5 +1,8 @@
 # Como colocar no ar
 
+> **No ar:** <https://teste01-pa6p.onrender.com> (Render, plano gratuito, deploy automático a
+> cada push no branch).
+
 O jogo é um servidor Node com **WebSocket** (Socket.IO): as salas vivem na memória do
 processo e o estado é empurrado para os jogadores em tempo real. Isso decide onde ele roda.
 
