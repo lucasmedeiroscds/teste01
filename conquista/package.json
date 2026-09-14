@@ -10,7 +10,8 @@
     "dev": "node --watch server.js",
     "test": "node --test tests/game.test.mjs tests/server.test.mjs",
     "test:e2e": "node --test tests/e2e.test.mjs",
-    "test:all": "node --test tests/game.test.mjs tests/server.test.mjs tests/e2e.test.mjs"
+    "test:all": "node --test tests/game.test.mjs tests/server.test.mjs tests/e2e.test.mjs",
+    "install:dev": "npm install --include=dev"
   },
   "engines": {
     "node": ">=18"

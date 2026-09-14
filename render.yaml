@@ -7,9 +7,15 @@ services:
     runtime: node
     plan: free
     rootDir: conquista
-    buildCommand: npm install --omit=dev
+    buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /healthz
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # Redundante com o .npmrc, mas garante que nenhuma ferramenta de teste
+      # (Playwright e os geradores de mapa) seja baixada no servidor.
+      - key: NPM_CONFIG_OMIT
+        value: dev
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: "1"

@@ -21,7 +21,12 @@ reescrita da camada de rede — o motor de regras (`src/game.js`) não muda.
 ## Render (recomendado: WebSocket real, sem alterar o código)
 
 O `render.yaml` na **raiz do repositório** já descreve o serviço: `rootDir: conquista`, build
-`npm install --omit=dev`, start `npm start`, health check em `/healthz`, Node 22, plano free.
+`npm install`, start `npm start`, health check em `/healthz`, Node 22, plano free.
+
+> **Por que `npm install` simples basta:** o `conquista/.npmrc` fixa `omit=dev`, então nenhuma
+> instalação no servidor puxa as dependências de desenvolvimento — em especial o **Playwright**,
+> que baixaria centenas de MB de navegador e derruba o build no plano gratuito. Para rodar os
+> testes na sua máquina, use `npm run install:dev` (ou `npm install --include=dev`).
 
 ### Opção A — depois de juntar o código na `main` (mais simples)
 
@@ -39,7 +44,7 @@ caminho manual:
 2. Preencha:
    - **Branch**: `claude/multiplayer-board-game-gizo7o`
    - **Root Directory**: `conquista`
-   - **Build Command**: `npm install --omit=dev`
+   - **Build Command**: `npm install`
    - **Start Command**: `npm start`
    - **Health Check Path**: `/healthz`
    - **Instance Type**: Free
@@ -53,7 +58,8 @@ Não é preciso configurar `PORT`: o servidor usa a porta que o Render injeta.
 | --- | --- | --- |
 | `npm error enoent Could not read package.json` | O build rodou na raiz do repositório, não na pasta do jogo | Já coberto: existe um `package.json` na raiz que instala e inicia o jogo sozinho. Se o erro persistir, confira **Root Directory** = `conquista` |
 | `No render.yaml found` no Blueprint | O Blueprint lê o arquivo do **branch padrão** (`main`), e o código ainda está no branch da PR | Faça o merge da PR, ou use a Opção B (Web Service apontando para o branch) |
-| `Cannot find module 'express'` ao iniciar | O build não instalou as dependências | **Build Command** = `npm install --omit=dev` |
+| Build trava ou falha baixando navegador (`playwright`, `Downloading Chromium`) | A instalação puxou as dependências de teste | Já coberto pelo `conquista/.npmrc` (`omit=dev`). Se ainda acontecer, adicione a variável de ambiente `NPM_CONFIG_OMIT=dev` no serviço |
+| `Cannot find module 'express'` ao iniciar | O build não instalou as dependências | **Build Command** = `npm install` |
 | `Exited with status 1` logo após "Build successful" | Comando de start errado | **Start Command** = `npm start` |
 
 O repositório funciona nas duas configurações: com **Root Directory** `conquista` (o
@@ -73,8 +79,10 @@ usar `npm install --omit=dev` como build, `npm start` como start e respeitar a v
 
 ```bash
 cd conquista
-npm install --omit=dev
+npm install          # so o que o servidor precisa
 npm start
 ```
+
+Para rodar a suíte de testes (Playwright incluído): `npm run install:dev && npm test`.
 
 O terminal imprime o endereço local e o da rede (para abrir no celular no mesmo Wi-Fi).

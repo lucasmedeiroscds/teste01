@@ -12,9 +12,12 @@ e envia ações — nenhuma regra (nem a rolagem de dado) roda no cliente.
 
 ```bash
 cd conquista
-npm install
+npm install        # instala so o que o servidor precisa
 npm start          # http://localhost:3000
 ```
+
+Para rodar os testes, instale também as ferramentas de desenvolvimento:
+`npm run install:dev && npm test`.
 
 Um jogador cria a sala, os outros entram com o código de 4 letras ou pelo link do convite.
 De 2 a 6 jogadores por sala.
