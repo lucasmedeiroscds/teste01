@@ -47,6 +47,19 @@ caminho manual:
 
 Não é preciso configurar `PORT`: o servidor usa a porta que o Render injeta.
 
+### Se o build falhar
+
+| Erro no log do Render | O que é | Como resolver |
+| --- | --- | --- |
+| `npm error enoent Could not read package.json` | O build rodou na raiz do repositório, não na pasta do jogo | Já coberto: existe um `package.json` na raiz que instala e inicia o jogo sozinho. Se o erro persistir, confira **Root Directory** = `conquista` |
+| `No render.yaml found` no Blueprint | O Blueprint lê o arquivo do **branch padrão** (`main`), e o código ainda está no branch da PR | Faça o merge da PR, ou use a Opção B (Web Service apontando para o branch) |
+| `Cannot find module 'express'` ao iniciar | O build não instalou as dependências | **Build Command** = `npm install --omit=dev` |
+| `Exited with status 1` logo após "Build successful" | Comando de start errado | **Start Command** = `npm start` |
+
+O repositório funciona nas duas configurações: com **Root Directory** `conquista` (o
+recomendado) ou com ele vazio — nesse caso o `package.json` da raiz delega a instalação e o
+start para a pasta do jogo.
+
 O plano gratuito hiberna depois de 15 minutos parado: a primeira visita demora ~30s para
 acordar o serviço. Partidas em andamento se perdem se ele hibernar, porque o estado das salas
 vive na memória do processo.

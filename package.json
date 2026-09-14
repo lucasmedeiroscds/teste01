@@ -1,0 +1,11 @@
+{
+  "name": "teste01",
+  "private": true,
+  "description": "Raiz do repositorio. O jogo vive em conquista/ — estes scripts apenas delegam, para o deploy funcionar mesmo quando o Root Directory nao e apontado para a pasta do jogo.",
+  "scripts": {
+    "postinstall": "npm --prefix conquista install --omit=dev --no-audit --no-fund",
+    "start": "npm --prefix conquista start",
+    "test": "npm --prefix conquista test"
+  },
+  "engines": { "node": ">=18" }
+}
