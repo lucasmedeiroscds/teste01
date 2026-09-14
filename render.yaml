@@ -1,0 +1,21 @@
+# Blueprint do Render: sobe "Conquista & Capital" com WebSocket funcionando, sem mexer no
+# codigo. No painel do Render: New > Blueprint > escolha este repositorio.
+# O arquivo precisa ficar na raiz do repositorio; o rootDir aponta para a pasta do jogo.
+services:
+  - type: web
+    name: conquista-e-capital
+    runtime: node
+    plan: free
+    rootDir: conquista
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Redundante com o .npmrc, mas garante que nenhuma ferramenta de teste
+      # (Playwright e os geradores de mapa) seja baixada no servidor.
+      - key: NPM_CONFIG_OMIT
+        value: dev
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: "1"

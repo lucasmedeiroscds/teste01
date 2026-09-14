@@ -1,0 +1,30 @@
+{
+  "name": "conquista-e-capital",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jogo de tabuleiro multiplayer no navegador em cima do mapa-mundi com as 60 maiores economias: mistura War (tropas, fronteiras, combate por dados) e Banco Imobiliario (compra de paises, tributo, industrias, impostos e emprestimos), com classes (empresario, politico, figura religiosa).",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test tests/game.test.mjs tests/server.test.mjs",
+    "test:e2e": "node --test tests/e2e.test.mjs",
+    "test:all": "node --test tests/game.test.mjs tests/server.test.mjs tests/e2e.test.mjs",
+    "install:dev": "npm install --include=dev"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "d3-geo": "^3.1.1",
+    "playwright": "^1.63.0",
+    "socket.io-client": "^4.8.3",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  }
+}
