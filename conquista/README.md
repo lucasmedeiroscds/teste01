@@ -196,4 +196,5 @@ O jogo precisa de um processo Node rodando com WebSocket — não funciona em ho
 estática (GitHub Pages) nem em funções serverless (Vercel), onde não há conexão persistente
 nem memória compartilhada entre requisições. O passo a passo, incluindo o que seria preciso
 mudar para rodar no Vercel, está em [DEPLOY.md](DEPLOY.md). O caminho mais curto é o
-`render.yaml` já incluído: **New → Blueprint** no Render apontando para este repositório.
+`render.yaml` na raiz do repositório: **New → Blueprint** no Render apontando para este
+repositório (depois que o código estiver na `main`).

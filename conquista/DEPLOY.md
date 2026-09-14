@@ -20,14 +20,36 @@ reescrita da camada de rede — o motor de regras (`src/game.js`) não muda.
 
 ## Render (recomendado: WebSocket real, sem alterar o código)
 
-1. Faça login em <https://render.com> com a conta do GitHub.
-2. **New → Blueprint** e escolha este repositório (o arquivo `conquista/render.yaml` já está
-   pronto: `rootDir` apontando para `conquista/`, build `npm install --omit=dev`, start
-   `npm start`, health check em `/healthz`).
-3. Confirme. Em poucos minutos sai uma URL `https://conquista-e-capital.onrender.com`.
+O `render.yaml` na **raiz do repositório** já descreve o serviço: `rootDir: conquista`, build
+`npm install --omit=dev`, start `npm start`, health check em `/healthz`, Node 22, plano free.
+
+### Opção A — depois de juntar o código na `main` (mais simples)
+
+1. Faça o merge da PR do jogo na `main`.
+2. Entre em <https://render.com> com a conta do GitHub.
+3. **New → Blueprint**, escolha este repositório e confirme. O Render lê o `render.yaml`
+   sozinho e cria o serviço.
+
+### Opção B — sem esperar o merge, direto do branch
+
+O Blueprint lê o `render.yaml` do branch padrão do repositório, então antes do merge use o
+caminho manual:
+
+1. **New → Web Service** e conecte este repositório.
+2. Preencha:
+   - **Branch**: `claude/multiplayer-board-game-gizo7o`
+   - **Root Directory**: `conquista`
+   - **Build Command**: `npm install --omit=dev`
+   - **Start Command**: `npm start`
+   - **Health Check Path**: `/healthz`
+   - **Instance Type**: Free
+3. Criar. Em poucos minutos sai uma URL `https://<nome>.onrender.com`.
+
+Não é preciso configurar `PORT`: o servidor usa a porta que o Render injeta.
 
 O plano gratuito hiberna depois de 15 minutos parado: a primeira visita demora ~30s para
-acordar o serviço. Partidas em andamento são perdidas se ele hibernar (o estado é em memória).
+acordar o serviço. Partidas em andamento se perdem se ele hibernar, porque o estado das salas
+vive na memória do processo.
 
 ## Railway / Fly.io (mesma ideia)
 

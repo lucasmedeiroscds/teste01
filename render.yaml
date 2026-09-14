@@ -1,5 +1,6 @@
-# Blueprint do Render: sobe o jogo com WebSocket funcionando, sem mexer no codigo.
-# No painel do Render: New > Blueprint > aponte para este repositorio.
+# Blueprint do Render: sobe "Conquista & Capital" com WebSocket funcionando, sem mexer no
+# codigo. No painel do Render: New > Blueprint > escolha este repositorio.
+# O arquivo precisa ficar na raiz do repositorio; o rootDir aponta para a pasta do jogo.
 services:
   - type: web
     name: conquista-e-capital
