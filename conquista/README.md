@@ -52,8 +52,9 @@ Cada jogador escolhe uma classe no lobby, e cada classe tem uma habilidade:
   - país **seu** → pode construir;
   - país **inimigo** → paga o **tributo** ou **declara guerra**.
 - **Indústrias:** pequena custa **230** e rende **+35/rodada**; grande custa **500** e rende
-  **+75/rodada** (limite de 3 pequenas e 2 grandes por país). Também aumentam o tributo e
-  dão bônus de defesa.
+  **+75/rodada**. Cada país aceita no máximo **3 indústrias no total** (e no máximo 2 grandes),
+  ou seja, um país rende no máximo +185/rodada a mais do que a base. Também aumentam o
+  tributo e dão bônus de defesa.
 - **Guerra:** a qualquer momento do seu turno você ataca a partir de um país seu que faça
   fronteira com o alvo (deixando ao menos 1 tropa para trás). Atacante rola até 3 dados,
   defensor até 2, **empate favorece o defensor**. Zerando as tropas do defensor, o país e as
@@ -74,6 +75,8 @@ Cada jogador escolhe uma classe no lobby, e cada classe tem uma habilidade:
 
 Quem não consegue pagar um tributo quebra e entrega os países ao credor. Quem fica sem
 países e sem caixa sai do jogo.
+
+O teto de indústrias por país fica em `RULES.maxFactoriesPerCountry`.
 
 Duas decisões que o enunciado não fechava e que ficaram configuráveis em `src/game.js`
 (objeto `RULES`): o imposto da rodada 13 foi implementado como **20% do caixa** (e não 20 de

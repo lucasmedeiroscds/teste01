@@ -37,6 +37,7 @@ export const RULES = {
     small: { cost: 230, income: 35, label: 'Industria pequena', max: 3 },
     large: { cost: 500, income: 75, label: 'Industria grande', max: 2 },
   },
+  maxFactoriesPerCountry: 3, // teto somando pequenas e grandes
   inflationEvery: 2,
   inflationRate: 0.02,
   bankTaxEvery: 13,
@@ -438,6 +439,9 @@ function doBuild(s, player, action) {
   const country = byCountry(s, action.countryId);
   if (!country) return fail('Pais invalido.');
   if (country.ownerId !== player.id) return fail('O pais nao e seu.');
+  if (country.small + country.large >= s.config.maxFactoriesPerCountry) {
+    return fail(`${country.name} ja tem ${s.config.maxFactoriesPerCountry} industrias (o teto por pais).`);
+  }
   if (country[size] >= spec.max) return fail(`Limite de ${spec.label.toLowerCase()} atingido nesse pais.`);
   if (player.gold < spec.cost) return fail('Ouro insuficiente.');
   player.gold -= spec.cost;
@@ -643,6 +647,7 @@ export function publicState(s) {
       maxRounds: s.config.maxRounds,
       recruitCost: s.config.recruitCost,
       factories: s.config.factories,
+      maxFactoriesPerCountry: s.config.maxFactoriesPerCountry,
       loanMax: s.config.loanMax,
       loanFromRound: s.config.loanFromRound,
       loanInterest: s.config.loanInterest,

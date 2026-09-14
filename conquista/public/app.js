@@ -85,8 +85,8 @@
         rodada conforme a posicao no ranking mundial de produtividade (1o lugar = 400).</li>
       <li><b>Turno:</b> role o dado e ande esse tanto de paises pelas fronteiras (pode parar antes).
         Onde voce parar: pais livre = comprar; pais seu = construir; pais inimigo = pagar tributo ou guerra.</li>
-      <li><b>Industrias:</b> pequena custa 230 e rende +35/rodada; grande custa 500 e rende +75/rodada.
-        Tambem aumentam o tributo e ajudam na defesa.</li>
+      <li><b>Industrias:</b> pequena custa 230 e rende +35/rodada; grande custa 500 e rende +75/rodada,
+        no maximo <b>3 por pais</b> (e ate 2 grandes). Tambem aumentam o tributo e ajudam na defesa.</li>
       <li><b>Guerra:</b> ataque a partir de um pais seu que faca fronteira com o alvo. 3 dados contra 2,
         empate favorece quem defende. Zerando as tropas, o pais (e as industrias) mudam de dono.</li>
       <li><b>Banco:</b> a cada 2 rodadas todos perdem 2% do caixa (inflacao) e a cada 13 rodadas pagam
@@ -553,15 +553,20 @@
   }
 
   function buildRow(g, p, c) {
+    const wrap = el('div', 'action-box');
+    const total = c.small + c.large;
+    const teto = g.config.maxFactoriesPerCountry;
+    wrap.append(el('div', 'hint', `Industrias: ${total}/${teto} (ate ${g.config.factories.large.max} grandes)`));
     const row = el('div', 'row');
     for (const size of ['small', 'large']) {
       const spec = g.config.factories[size];
       const b = actionBtn(`${spec.label} (${spec.cost}) +${spec.income}/rodada`,
         () => send('action', { type: 'build', countryId: c.id, size }), 'primary');
-      b.disabled = p.gold < spec.cost || c[size] >= spec.max;
+      b.disabled = p.gold < spec.cost || c[size] >= spec.max || total >= teto;
       row.append(b);
     }
-    return row;
+    wrap.append(row);
+    return wrap;
   }
 
   function attackOrigins(g, targetId) {
@@ -582,7 +587,8 @@
     box.append(el('div', 'hint',
       `${c.rank}o no ranking • ${c.income}/rodada • preco ${gold(c.price)} • fronteiras: ${geo.neighbors.length}`));
     box.append(el('div', 'hint', owner
-      ? `Dono: ${owner.name} • ${c.troops} tropa(s) • ${c.small} industria(s) pequena(s), ${c.large} grande(s) • tributo ${gold(c.tribute)}`
+      ? `Dono: ${owner.name} • ${c.troops} tropa(s) • industrias ${c.small + c.large}/${g.config.maxFactoriesPerCountry} ` +
+        `(${c.small} pequena(s), ${c.large} grande(s)) • tributo ${gold(c.tribute)}`
       : 'Sem dono.'));
 
     const p = myPlayer();

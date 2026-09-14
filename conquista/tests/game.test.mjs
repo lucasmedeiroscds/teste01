@@ -283,3 +283,26 @@ test('da para atacar qualquer fronteira sua durante o turno, sem precisar desemb
   // fora do turno continua proibido
   assert.equal(act(s, 'b', { type: 'attack', from: alvoId, to: base.id }).ok, false);
 });
+
+test('teto de industrias por pais soma pequenas e grandes', () => {
+  const s = newGame();
+  const home = country(s, s.players[0].homeId);
+  s.players[0].gold = 50_000;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  assert.equal(act(s, 'a', { type: 'build', countryId: home.id, size: 'small' }).ok, true);
+  assert.equal(act(s, 'a', { type: 'build', countryId: home.id, size: 'small' }).ok, true);
+  assert.equal(act(s, 'a', { type: 'build', countryId: home.id, size: 'small' }).ok, true);
+  assert.equal(home.small + home.large, s.config.maxFactoriesPerCountry);
+  const bloqueada = act(s, 'a', { type: 'build', countryId: home.id, size: 'large' });
+  assert.equal(bloqueada.ok, false);
+  assert.match(bloqueada.error, /teto por pais/);
+  // O ganho maximo de um pais fica limitado a 3 industrias (185 com 1 pequena + 2 grandes).
+  const outro = s.countries.find((c) => !c.ownerId);
+  outro.ownerId = 'a';
+  outro.troops = 1;
+  act(s, 'a', { type: 'build', countryId: outro.id, size: 'large' });
+  act(s, 'a', { type: 'build', countryId: outro.id, size: 'large' });
+  act(s, 'a', { type: 'build', countryId: outro.id, size: 'small' });
+  assert.equal(act(s, 'a', { type: 'build', countryId: outro.id, size: 'small' }).ok, false);
+  assert.equal(incomeOf(s, 'a') - home.income - outro.income, 3 * 35 + 2 * 75 + 35);
+});
