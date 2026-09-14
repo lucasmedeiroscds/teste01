@@ -21,6 +21,7 @@
   let room = null;      // estado da sala
   let world = null;     // mapa-mundi (paths + vizinhos)
   let selected = null;  // id do pais selecionado
+  let combatFx = null;  // animacao da ultima invasao (seta no mapa + faixa)
   const view = { x: 0, y: 0, w: 1000, h: 520 };
 
   // ------------------------------------------------------------- helpers
@@ -85,7 +86,10 @@
       <li><b>Missao secreta:</b> cada jogador recebe uma das 50 missoes no inicio, com dois continentes
         sorteados na mesma carta. Cumprir a missao <i>ou</i> dominar esses dois continentes acaba o jogo.</li>
       <li><b>Comeco:</b> um pais aleatorio para cada um. O pais rende de 100 a 400 de ouro por rodada
-        conforme a posicao no ranking mundial de produtividade.</li>
+        conforme a posicao no ranking mundial de produtividade, e custa 5x isso para comprar.</li>
+      <li><b>Comprar e vender:</b> paises livres sao comprados onde voce parar. Os seus podem ser
+        vendidos ao banco por 70% do investido, ou oferecidos a outro jogador pelo preco que voces
+        combinarem.</li>
       <li><b>Turno:</b> role o dado e ande esse tanto de paises pelas fronteiras (pode parar antes).
         Onde parar: pais livre = comprar; pais seu = construir; pais inimigo = pagar tributo ou guerra.</li>
       <li><b>Guerra (dado de 12):</b> ataque de um pais seu com 2+ tropas contra um vizinho inimigo.
@@ -123,12 +127,30 @@
     });
   }
   $('#btn-help').addEventListener('click', () => openModal('Regras', RULES_HTML));
-  function openModal(title, html) {
+  /**
+   * Janela do jogo. `conteudo` pode ser HTML ou um elemento; `acoes` vira a fileira de
+   * botoes (sem acoes, mostra so "Fechar").
+   */
+  function openModal(title, conteudo, acoes = null) {
     $('#modal-title').textContent = title;
-    $('#modal-body').innerHTML = html;
+    const corpo = $('#modal-body');
+    corpo.innerHTML = '';
+    if (typeof conteudo === 'string') corpo.innerHTML = conteudo;
+    else corpo.append(conteudo);
+    const barra = $('#modal-actions');
+    barra.innerHTML = '';
+    const lista = acoes && acoes.length ? acoes : [{ label: 'Fechar' }];
+    for (const acao of lista) {
+      const b = el('button', `btn ${acao.cls || ''}`.trim(), acao.label);
+      b.addEventListener('click', () => {
+        if (acao.onClick && acao.onClick() === false) return;
+        closeModal();
+      });
+      barra.append(b);
+    }
     $('#modal').hidden = false;
   }
-  $('#modal-close').addEventListener('click', () => { $('#modal').hidden = true; });
+  const closeModal = () => { $('#modal').hidden = true; };
 
   // --------------------------------------------------------------- chat
   $('#chat-form').addEventListener('submit', (e) => {
@@ -346,6 +368,11 @@
     renderCountryBox(g);
     renderPlayers(g);
     renderLog(g);
+    if (g.combat && g.combat.id !== renderGame._combatId) {
+      renderGame._combatId = g.combat.id;
+      mostrarBatalha(g.combat);
+    }
+
     const minhaCarta = myPlayer()?.card;
     if (minhaCarta && minhaCarta.id !== renderGame._cardId) {
       renderGame._cardId = minhaCarta.id;
@@ -363,8 +390,23 @@
   function renderMap(g) {
     map.innerHTML = '';
     applyView(false); // sem redraw: senao o proprio desenho pediria outro desenho
-    const ocean = svgEl('rect', { x: 0, y: 0, width: 1000, height: 520, class: 'ocean' });
-    map.append(ocean);
+
+    // Oceano com um degrade suave, para o mapa nao ficar chapado.
+    const defs = svgEl('defs');
+    const grad = svgEl('linearGradient', { id: 'oceano', x1: '0', y1: '0', x2: '0', y2: '1' });
+    grad.append(svgEl('stop', { offset: '0', 'stop-color': '#0a1836' }));
+    grad.append(svgEl('stop', { offset: '0.55', 'stop-color': '#081228' }));
+    grad.append(svgEl('stop', { offset: '1', 'stop-color': '#050d1e' }));
+    defs.append(grad);
+    map.append(defs);
+    map.append(svgEl('rect', { x: -200, y: -200, width: 1400, height: 920, class: 'ocean', fill: 'url(#oceano)' }));
+
+    // Cenario: os paises que nao entram na partida continuam desenhados, apagados.
+    if (world.decor?.length) {
+      const cenario = svgEl('g', { class: 'decor' });
+      for (const pais of world.decor) cenario.append(svgEl('path', { d: pais.path }));
+      map.append(cenario);
+    }
     const mine = myPlayer();
     const movable = isMyTurn() && g.phase === 'move' && mine ? neighborsOf(mine.pos) : [];
     const attackTargets = g.pending?.kind === 'enemy' ? [g.pending.countryId] : [];
@@ -395,7 +437,7 @@
       path.addEventListener('click', () => onCountryClick(geo.id));
       map.append(path);
 
-      if (c?.ownerId || selected === geo.id || view.w < 420) {
+      if (c?.ownerId || selected === geo.id || view.w < 300) {
         labels.push({ geo, c, owner });
       }
     }
@@ -445,7 +487,7 @@
         }
         grp.append(badge);
       }
-      if (view.w < 420 || selected === geo.id) {
+      if (view.w < 300 || selected === geo.id) {
         const name = svgEl('text', { y: -12 * Math.max(0.45, scale), 'text-anchor': 'middle', class: 'country-name' });
         name.textContent = geo.name;
         name.setAttribute('transform', `scale(${Math.max(0.45, scale)})`);
@@ -453,6 +495,26 @@
       }
       grp.addEventListener('click', () => onCountryClick(geo.id));
       map.append(grp);
+    }
+
+    // Rastro da ultima invasao: seta da origem ao alvo e pulso no pais atacado.
+    if (combatFx && Date.now() < combatFx.until) {
+      const origem = mapById(combatFx.combat.from);
+      const destino = mapById(combatFx.combat.to);
+      const atacante = playerById(combatFx.combat.attackerId);
+      if (origem && destino) {
+        const cor = atacante?.color || '#fff';
+        const linha = svgEl('line', {
+          x1: origem.cx, y1: origem.cy, x2: destino.cx, y2: destino.cy,
+          class: 'attack-line', stroke: cor,
+        });
+        map.append(linha);
+        map.append(svgEl('circle', {
+          cx: destino.cx, cy: destino.cy, r: 6,
+          class: combatFx.combat.captured ? 'attack-pulse win' : 'attack-pulse',
+          stroke: cor,
+        }));
+      }
     }
 
     // Pecas dos jogadores.
@@ -478,6 +540,33 @@
         map.append(pawn);
       });
     }
+  }
+
+  /** Faixa grande + seta no mapa quando alguem invade (dura ~3,5s). */
+  function mostrarBatalha(combat) {
+    combatFx = { combat, until: Date.now() + 3500 };
+    const faixa = $('#battle-flash');
+    faixa.innerHTML = '';
+    const titulo = el('div', 'bf-titulo', combat.captured
+      ? `${combat.attackerName} tomou ${combat.toName}!`
+      : `${combat.defenderName} defendeu ${combat.toName}`);
+    const dados = el('div', 'bf-dados');
+    const dadoAtq = el('span', 'bf-dado atacante', String(combat.attTotal));
+    const dadoDef = el('span', 'bf-dado defensor', String(combat.defDie));
+    dados.append(dadoAtq, el('span', 'bf-x', 'x'), dadoDef);
+    const detalhe = el('div', 'bf-detalhe',
+      `${combat.fromName} → ${combat.toName}` +
+      (combat.bonus ? ` • dado ${combat.attDie} +${combat.bonus} de bonus` : '') +
+      (combat.captured ? ` • ${combat.moved} tropa(s) marcharam` : ' • atacante perdeu 1 tropa'));
+    faixa.append(titulo, dados, detalhe);
+    faixa.className = 'battle-flash' + (combat.captured ? ' win' : ' hold');
+    faixa.hidden = false;
+    clearTimeout(mostrarBatalha._t);
+    mostrarBatalha._t = setTimeout(() => {
+      faixa.hidden = true;
+      combatFx = null;
+      if (game()) renderGame();
+    }, 3500);
   }
 
   function renderStatus(g) {
@@ -540,9 +629,22 @@
     box.innerHTML = '';
     const p = myPlayer();
     if (!p) return;
-    if (g.winner) return box.append(el('div', 'box-title', 'Partida encerrada'));
+    if (g.winner) {
+      box.append(el('div', 'box-title', 'Partida encerrada'));
+      const vencedor = playerById(g.winner.id);
+      box.append(el('div', 'hint', `${vencedor?.name} venceu: ${g.winner.reason}.`));
+      if (room.hostId === me?.playerId) {
+        box.append(actionBtn('Jogar de novo (mesma mesa)', () => send('restart'), 'primary big'));
+        box.append(actionBtn('Voltar ao lobby', () => send('backToLobby')));
+      } else {
+        box.append(el('div', 'hint', 'O anfitriao pode comecar outra partida ou voltar ao lobby.'));
+      }
+      renderOffers(g, box);
+      return;
+    }
     if (!p.alive) return box.append(el('div', 'box-title', 'Voce quebrou — assista ao desfecho.'));
     if (!isMyTurn()) {
+      renderOffers(g, box);
       box.append(el('div', 'box-title', `Aguardando ${playerById(g.currentId)?.name}...`));
       const ehBot = room.botIds?.includes(g.currentId);
       const offline = !ehBot && !room.members.find((m) => m.id === g.currentId)?.online;
@@ -551,6 +653,8 @@
       }
       return;
     }
+
+    renderOffers(g, box);
 
     if (g.phase === 'roll') {
       box.append(actionBtn('🎲 Rolar o dado', () => send('action', { type: 'roll' }), 'primary big'));
@@ -627,21 +731,109 @@
       row.append(recruit);
       box.append(row);
       box.append(actionBtn('Encerrar turno ▶', () => send('action', { type: 'endTurn' }), 'primary big'));
-      box.append(actionBtn('Desistir da partida', () => {
-        if (confirm('Desistir? Seus paises ficam neutros.')) send('surrender');
-      }, 'ghost tiny'));
+    }
+
+    // Desistir vale em qualquer fase do seu turno.
+    box.append(actionBtn('Desistir da partida', () => {
+      if (confirm('Desistir? Seus paises ficam neutros.')) send('surrender');
+    }, 'ghost tiny'));
+  }
+
+  /** Propostas de compra e venda entre jogadores. */
+  function renderOffers(g, box) {
+    const minhas = (g.offers || []).filter((o) => o.toId === me?.playerId);
+    const enviadas = (g.offers || []).filter((o) => o.fromId === me?.playerId);
+    if (!minhas.length && !enviadas.length) return;
+    box.append(el('div', 'box-title', 'Negociacoes'));
+    for (const o of minhas) {
+      const c = countryById(o.countryId);
+      const de = playerById(o.fromId);
+      box.append(el('div', 'hint', `${de?.name} oferece ${c.name} por ${gold(o.price)} (vale ${gold(c.value)}).`));
+      const row = el('div', 'row');
+      const aceitar = actionBtn('Aceitar', () => send('offerResponse', { offerId: o.id, accept: true }), 'primary');
+      aceitar.disabled = (myPlayer()?.gold || 0) < o.price;
+      row.append(aceitar, actionBtn('Recusar', () => send('offerResponse', { offerId: o.id, accept: false })));
+      box.append(row);
+    }
+    for (const o of enviadas) {
+      const c = countryById(o.countryId);
+      const para = playerById(o.toId);
+      box.append(el('div', 'hint', `Voce ofereceu ${c.name} a ${para?.name} por ${gold(o.price)} — aguardando.`));
+      box.append(actionBtn('Retirar proposta', () => send('action', { type: 'cancelOffer', offerId: o.id }), 'ghost tiny'));
     }
   }
 
   function askLoan(g) {
-    const raw = prompt(
-      `Quanto quer pegar emprestado? Ate ${g.config.loanMax}, com ${g.config.loanInterest * 100}% de juros, ` +
-      `pago em ${g.config.loanInstallments} parcelas (uma por rodada).`,
-      String(g.config.loanMax));
-    if (raw == null) return;
-    const amount = Math.floor(Number(raw));
-    if (!Number.isFinite(amount) || amount <= 0) return toast('Valor invalido.');
-    send('action', { type: 'loan', amount });
+    const max = g.config.loanMax;
+    const corpo = el('div', 'dialogo');
+    corpo.append(el('p', 'hint',
+      `O gerente sorri: "e so uma formalidade". Teto de ${max} de ouro, ${g.config.loanInterest * 100}% de juros, ` +
+      `pago em ${g.config.loanInstallments} parcelas — uma por rodada.`));
+    const range = el('input');
+    range.type = 'range';
+    range.min = '100';
+    range.max = String(max);
+    range.step = '50';
+    range.value = String(max);
+    const resumo = el('div', 'dialogo-resumo');
+    const atualizar = () => {
+      const valor = Number(range.value);
+      const divida = Math.round(valor * (1 + g.config.loanInterest));
+      const parcela = Math.ceil(divida / g.config.loanInstallments);
+      resumo.innerHTML =
+        `<b>Voce recebe ${gold(valor)}</b><br>Devolve ${gold(divida)} em ` +
+        `${g.config.loanInstallments} parcelas de ${gold(parcela)}`;
+    };
+    range.addEventListener('input', atualizar);
+    atualizar();
+    corpo.append(range, resumo);
+    corpo.append(el('p', 'hint',
+      `Se voce nao pagar, a divida sobe ${g.config.loanLateRate * 100}% por rodada e, depois de ` +
+      `${g.config.loanSeizeAfter} rodadas, o banco apreende suas industrias.`));
+    openModal('Emprestimo do banco', corpo, [
+      { label: 'Assinar', cls: 'primary', onClick: () => send('action', { type: 'loan', amount: Number(range.value) }) },
+      { label: 'Deixa pra la' },
+    ]);
+  }
+
+  /** Vender um pais: ao banco (70%) ou para outro jogador, por um preco negociado. */
+  function askSell(g, p, c) {
+    const corpo = el('div', 'dialogo');
+    corpo.append(el('p', 'hint',
+      `${c.name} vale ${gold(c.value)} com tudo que voce investiu. O banco recompra por ` +
+      `${Math.round(g.config.sellToBankRate * 100)}%: ${gold(c.bankOffer)}.`));
+    const preco = el('input');
+    preco.type = 'number';
+    preco.min = '0';
+    preco.step = '50';
+    preco.value = String(c.value);
+    const alvo = el('select', 'select');
+    for (const outro of g.players.filter((x) => x.alive && x.id !== p.id)) {
+      const op = el('option', '', outro.name);
+      op.value = outro.id;
+      alvo.append(op);
+    }
+    const bloco = el('div', 'dialogo-linha');
+    bloco.append(el('label', '', 'Oferecer para'), alvo, el('label', '', 'Por quanto'), preco);
+    if (g.players.filter((x) => x.alive && x.id !== p.id).length) corpo.append(bloco);
+    corpo.append(el('p', 'hint',
+      `A proposta fica de pe por ${g.config.offerTimeout} rodadas. Quem aceitar paga na hora e ` +
+      'herda metade das tropas que estiverem no pais.'));
+    openModal(`Vender ${c.name}`, corpo, [
+      {
+        label: `Vender ao banco (${gold(c.bankOffer)})`,
+        cls: 'primary',
+        onClick: () => send('action', { type: 'sell', countryId: c.id }),
+      },
+      {
+        label: 'Oferecer ao jogador',
+        onClick: () => {
+          if (!alvo.value) return toast('Nao ha para quem oferecer.');
+          send('action', { type: 'offer', countryId: c.id, toPlayerId: alvo.value, price: Number(preco.value) });
+        },
+      },
+      { label: 'Cancelar' },
+    ]);
   }
 
   function buildRow(g, p, c) {
@@ -715,6 +907,9 @@
         box.append(row);
       }
       box.append(buildRow(g, p, c));
+      const vender = actionBtn(`Vender ou negociar (banco paga ${gold(c.bankOffer)})`, () => askSell(g, p, c));
+      vender.disabled = p.lands <= 1;
+      box.append(vender);
     }
   }
 

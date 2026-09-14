@@ -90,7 +90,8 @@ export const CONTINENTS = {
 export const COUNTRIES = RANKED.map(([id, name, atlas, cont], i) => {
   const rank = i + 1;
   const income = incomeForRank(rank);
-  return { id, name, atlas, cont, rank, income, price: Math.round((income * 3.2) / 10) * 10 };
+  // Preco de compra: 5x a renda por rodada (o 1o do ranking custa 2.000, o 60o custa 500).
+  return { id, name, atlas, cont, rank, income, price: Math.round((income * 5) / 10) * 10 };
 });
 
 /** Ids dos paises de um continente. */

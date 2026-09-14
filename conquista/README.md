@@ -46,6 +46,7 @@ o estado personalizado para cada um, ninguém vê a carta do vizinho). A mesma c
 8 e 16 países, para os objetivos ficarem comparáveis.
 
 **A partida acaba quando alguém cumpre a própria missão ou domina esses dois continentes.**
+No fim, o anfitrião escolhe entre **jogar de novo com a mesma mesa** ou **voltar ao lobby**.
 Ficar sem nenhum país elimina o jogador; se sobrar só um, ele vence. Como rede de segurança,
 na rodada 40 vence o maior patrimônio.
 
@@ -63,7 +64,9 @@ imposto, indústria de brinde e modificador no dado de invasão.
   em SVG a partir do Natural Earth. Só esses 60 países existem no jogo.
 - O **ouro por rodada** de cada país vem da posição no ranking de produtividade, numa escala
   linear: 1º lugar (Estados Unidos) = **400/rodada**, 60º lugar (Equador) = **100/rodada**.
-- O preço de compra é 3,2× a renda por rodada.
+- O preço de compra é **5× a renda por rodada** (o 1º do ranking custa 2.000, o 60º custa 500).
+- **Todos os 176 países do mundo** aparecem desenhados; os 116 que estão fora da partida ficam
+  como cenário apagado, sem dono e sem clique.
 - As **fronteiras** são as reais (incluindo corredores por países fora do jogo), mais rotas
   marítimas para ilhas e travessias curtas. O mapa é um grafo conexo: dá para chegar a
   qualquer país a partir de qualquer outro.
@@ -79,6 +82,9 @@ imposto, indústria de brinde e modificador no dado de invasão.
   - país **sem dono** → pode comprar;
   - país **seu** → pode construir;
   - país **inimigo** → paga o **tributo** ou **declara guerra**.
+- **Vender:** qualquer país seu (menos o último) pode ser vendido **ao banco por 70%** do que
+  você investiu nele, ou **oferecido a outro jogador** pelo preço que vocês combinarem — a
+  proposta fica de pé por 3 rodadas e quem aceita herda metade das tropas.
 - **Indústrias:** pequena custa **230** e rende **+35/rodada**; grande custa **500** e rende
   **+75/rodada**. Cada país aceita no máximo **3 indústrias no total** (e no máximo 2 grandes).
   Cada indústria cobra **20% do que rende em manutenção por rodada** (pequena −7, grande −15),
@@ -173,6 +179,11 @@ tela do celular sem rolagem lateral.
 - **O mapa conta a história:** a cor do país satura e a borda engrossa conforme a **ocupação
   militar** (tropas), e cada **indústria** vira um prédio desenhado sobre o país (as grandes
   são maiores). Afastado, cada país vira um ponto que cresce com a guarnição.
+- **Invasão dá para ver:** ao atacar, sai uma seta animada da origem até o alvo, um pulso no
+  país invadido e uma faixa no topo do mapa com os dois dados e o resultado — todo mundo na
+  sala vê, não só quem atacou.
+- **Janelas do próprio jogo:** empréstimo e venda usam o diálogo do jogo (com o teto de 600
+  no próprio controle deslizante), não o `prompt()` do navegador.
 - **Mobile:** mapa com arrastar, pinça e botões de zoom, painel em abas, alvos de toque
   grandes e `safe-area-inset`. No desktop vira duas colunas com o mapa ocupando a altura da tela.
 - **Equilíbrio medido:** `tests/bot.test.mjs` joga partidas inteiras só com bots; os limiares

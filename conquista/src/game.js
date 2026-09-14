@@ -69,6 +69,8 @@ export const RULES = {
   loanInstallments: 10, // a divida vem parcelada, uma parcela por rodada
   loanLateRate: 0.02, // deixou de pagar: o saldo devedor sobe 2% por rodada
   loanSeizeAfter: 10, // passou disso com divida aberta, o banco apreende industrias
+  sellToBankRate: 0.7, // o banco recompra o pais por 70% do valor investido
+  offerTimeout: 3, // rodadas ate uma proposta entre jogadores expirar
   tributePerTroop: 10,
   tributePerSmall: 30,
   tributePerLarge: 60,
@@ -140,6 +142,14 @@ export function netWorth(s, player) {
   );
   return player.gold + assets + player.reserve * 10 - (player.loan?.debt || 0);
 }
+
+/** Valor de mercado de um pais: preco mais o que foi investido em industrias. */
+export function marketValue(s, country) {
+  const f = s.config.factories;
+  return country.price + country.small * f.small.cost + country.large * f.large.cost;
+}
+
+export const bankOffer = (s, country) => Math.round(marketValue(s, country) * s.config.sellToBankRate);
 
 export function tributeOf(s, country) {
   const cfg = s.config;
@@ -567,6 +577,12 @@ function applyRoundEvents(s, rng) {
   for (const p of alive().filter((x) => x.loan)) chargeInstallment(s, p);
 
   if (round >= s.nextEventRound) drawEventCards(s, rng);
+
+  const vencidas = s.offers.filter((o) => round - o.round >= cfg.offerTimeout);
+  if (vencidas.length) {
+    s.offers = s.offers.filter((o) => round - o.round < cfg.offerTimeout);
+    pushLog(s, `${vencidas.length} proposta(s) de venda expiraram.`);
+  }
 }
 
 function nextTurn(s, rng) {
@@ -629,6 +645,8 @@ export function createGame(playersInput, options = {}, rng = defaultRng) {
     combat: null,
     log: [],
     events: [],
+    offers: [],
+    offerSeq: 0,
     winner: null,
     config: { ...RULES, ...options },
   };
@@ -784,6 +802,81 @@ function doBuild(s, player, action) {
   return okRes();
 }
 
+function doSell(s, player, action) {
+  const country = byCountry(s, action.countryId);
+  if (!country) return fail('Pais invalido.');
+  if (country.ownerId !== player.id) return fail('O pais nao e seu.');
+  if (ownedBy(s, player.id).length <= 1) return fail('Voce nao pode vender seu ultimo pais.');
+  const valor = bankOffer(s, country);
+  player.gold += valor;
+  country.ownerId = null;
+  country.troops = 0;
+  country.small = 0;
+  country.large = 0;
+  s.offers = s.offers.filter((o) => o.countryId !== country.id);
+  pushLog(s, `${player.name} vende ${country.name} ao banco por ${valor} (70% do investido).`, 'warn');
+  return okRes();
+}
+
+function doOffer(s, player, action) {
+  const country = byCountry(s, action.countryId);
+  const alvo = byId(s, action.toPlayerId);
+  const preco = Math.max(0, Math.floor(Number(action.price) || 0));
+  if (!country) return fail('Pais invalido.');
+  if (country.ownerId !== player.id) return fail('O pais nao e seu.');
+  if (!alvo || !alvo.alive || alvo.id === player.id) return fail('Escolha um adversario em jogo.');
+  if (ownedBy(s, player.id).length <= 1) return fail('Voce nao pode vender seu ultimo pais.');
+  if (s.offers.some((o) => o.countryId === country.id && o.toId === alvo.id)) {
+    return fail('Ja existe uma proposta desse pais para esse jogador.');
+  }
+  s.offers.push({
+    id: `of${++s.offerSeq}`,
+    fromId: player.id,
+    toId: alvo.id,
+    countryId: country.id,
+    price: preco,
+    round: s.round,
+  });
+  pushLog(s, `${player.name} oferece ${country.name} a ${alvo.name} por ${preco}.`, 'warn');
+  return okRes();
+}
+
+function doCancelOffer(s, player, action) {
+  const antes = s.offers.length;
+  s.offers = s.offers.filter((o) => !(o.id === action.offerId && o.fromId === player.id));
+  if (s.offers.length === antes) return fail('Proposta nao encontrada.');
+  pushLog(s, `${player.name} retira uma proposta de venda.`);
+  return okRes();
+}
+
+/**
+ * Resposta a uma proposta de compra. Vale fora do turno: quem recebe pode aceitar
+ * ou recusar a qualquer momento.
+ */
+export function respondOffer(s, playerId, offerId, aceitar) {
+  if (s.phase === 'ended') return fail('A partida acabou.');
+  const player = byId(s, playerId);
+  const proposta = s.offers.find((o) => o.id === offerId);
+  if (!player?.alive || !proposta || proposta.toId !== playerId) return fail('Proposta indisponivel.');
+  const vendedor = byId(s, proposta.fromId);
+  const country = byCountry(s, proposta.countryId);
+  s.offers = s.offers.filter((o) => o.id !== offerId);
+  if (!aceitar) {
+    pushLog(s, `${player.name} recusa comprar ${country.name}.`);
+    return okRes();
+  }
+  if (!vendedor?.alive || country.ownerId !== vendedor.id) return fail('O pais mudou de dono.');
+  if (player.gold < proposta.price) return fail('Ouro insuficiente.');
+  player.gold -= proposta.price;
+  vendedor.gold += proposta.price;
+  country.ownerId = player.id;
+  country.troops = Math.max(1, Math.floor(country.troops / 2));
+  pushLog(s, `${player.name} compra ${country.name} de ${vendedor.name} por ${proposta.price}.`, 'good');
+  checkEliminations(s, player);
+  checkVictory(s);
+  return okRes();
+}
+
 function doDeploy(s, player, action) {
   const count = Math.max(1, Math.floor(Number(action.count) || 1));
   const country = byCountry(s, action.countryId);
@@ -873,16 +966,22 @@ function doAttack(s, player, action, rng) {
   const attTotal = attDie + bonus;
   const venceu = attTotal > defDie;
 
+  s.combatSeq = (s.combatSeq || 0) + 1;
   s.combat = {
+    id: s.combatSeq,
     from: from.id,
     to: target.id,
+    fromName: from.name,
+    toName: target.name,
     attDie,
     defDie,
     bonus,
     attTotal,
     captured: venceu,
     attackerId: player.id,
+    attackerName: player.name,
     defenderId: defender.id,
+    defenderName: defender.name,
   };
 
   pushLog(
@@ -946,6 +1045,9 @@ function resolveAction(state, player, action, rng, inTurn) {
     case 'tribute': return doTribute(state, player);
     case 'attack': return doAttack(state, player, action, rng);
     case 'build': return inTurn ? doBuild(state, player, action) : fail('Role o dado primeiro.');
+    case 'sell': return inTurn ? doSell(state, player, action) : fail('Role o dado primeiro.');
+    case 'offer': return inTurn ? doOffer(state, player, action) : fail('Role o dado primeiro.');
+    case 'cancelOffer': return doCancelOffer(state, player, action);
     case 'deploy': return inTurn ? doDeploy(state, player, action) : fail('Role o dado primeiro.');
     case 'recruit': return inTurn ? doRecruit(state, player, action) : fail('Role o dado primeiro.');
     case 'loan': return inTurn ? doLoan(state, player, action) : fail('Role o dado primeiro.');
@@ -990,7 +1092,10 @@ export function publicState(s, viewerId = null) {
       small: c.small,
       large: c.large,
       tribute: c.ownerId ? tributeOf(s, c) : null,
+      value: c.ownerId ? marketValue(s, c) : null,
+      bankOffer: c.ownerId ? bankOffer(s, c) : null,
     })),
+    offers: s.offers.filter((o) => !viewerId || o.fromId === viewerId || o.toId === viewerId),
     continents: CONTINENTS,
     players: s.players.map((p) => {
       const meu = acabou || p.id === viewerId;
@@ -1050,6 +1155,8 @@ export function publicState(s, viewerId = null) {
       bankTaxEvery: s.config.bankTaxEvery,
       taxBrackets: s.config.taxBrackets.map(([limite, taxa]) => [limite === Infinity ? null : limite, taxa]),
       combatDie: s.config.combatDie,
+      sellToBankRate: s.config.sellToBankRate,
+      offerTimeout: s.config.offerTimeout,
       eventWindow: s.config.eventWindow,
     },
   };

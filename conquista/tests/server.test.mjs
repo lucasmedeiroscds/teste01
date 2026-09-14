@@ -117,3 +117,49 @@ test('partida solo: um humano mais bots, e os bots jogam sozinhos', async (t) =>
   const mexeu = await espera((v) => v.game.log.length > linhas + 1);
   assert.ok(mexeu, 'os bots jogaram sem intervencao humana');
 });
+
+test('anfitriao pode reiniciar a partida ou voltar ao lobby', async (t) => {
+  server.listen(0);
+  await once(server, 'listening');
+  const { port } = server.address();
+  const host = connect(port);
+  const guest = connect(port);
+  t.after(() => { host.close(); guest.close(); server.close(); });
+
+  let ultimo = null;
+  let ultimoGuest = null;
+  host.on('room', (v) => { ultimo = v; });
+  guest.on('room', (v) => { ultimoGuest = v; });
+  const espera = async (fn, obter = () => ultimo, ms = 10_000) => {
+    const limite = Date.now() + ms;
+    while (Date.now() < limite) {
+      const v = obter();
+      if (v && fn(v)) return v;
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    return null;
+  };
+
+  const criada = await emit(host, 'createRoom', { name: 'Ana' });
+  await emit(guest, 'joinRoom', { code: criada.code, name: 'Bia' });
+  await emit(host, 'start');
+  const emJogo = await espera((v) => v.game);
+  assert.ok(emJogo);
+  const primeiraRodada = emJogo.game.log.length;
+
+  // Convidado nao reinicia.
+  assert.equal((await emit(guest, 'restart')).ok, false);
+  assert.equal((await emit(guest, 'backToLobby')).ok, false);
+
+  assert.equal((await emit(host, 'restart')).ok, true);
+  const reiniciada = await espera((v) => v.game && v.game.round === 1 && v.game.log.length <= primeiraRodada + 2);
+  assert.ok(reiniciada, 'partida recomecou do zero');
+  assert.equal(reiniciada.status, 'playing');
+
+  assert.equal((await emit(host, 'backToLobby')).ok, true);
+  const noLobby = await espera((v) => v.status === 'lobby');
+  assert.ok(noLobby, 'voltou ao lobby');
+  assert.equal(noLobby.game, null);
+  const convidadoNoLobby = await espera((v) => v.status === 'lobby', () => ultimoGuest);
+  assert.ok(convidadoNoLobby, 'o convidado tambem voltou');
+});

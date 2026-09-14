@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import express from 'express';
 import { Server } from 'socket.io';
-import { CLASSES, act, createGame, current, publicState, surrender } from './src/game.js';
-import { botNames, nextBotAction } from './src/bot.js';
+import { CLASSES, act, createGame, current, publicState, respondOffer, surrender } from './src/game.js';
+import { botNames, botOfferDecision, nextBotAction } from './src/bot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -95,6 +95,13 @@ function scheduleBots(room) {
     const jogador = current(room.game);
     if (!room.botIds.has(jogador.id)) {
       room.botLoop = false;
+      return;
+    }
+    const resposta = botOfferDecision(room.game, jogador.id);
+    if (resposta) {
+      respondOffer(room.game, jogador.id, resposta.offerId, resposta.accept);
+      broadcast(room);
+      setTimeout(passo, BOT_DELAY_MS).unref?.();
       return;
     }
     const acao = nextBotAction(room.game, jogador.id);
@@ -229,6 +236,48 @@ io.on('connection', (socket) => {
     broadcast(room);
     scheduleBots(room);
     cb?.(res);
+  });
+
+  socket.on('offerResponse', ({ offerId, accept } = {}, cb) => {
+    const room = findRoom(ctx?.code);
+    if (!room?.game) return cb?.({ ok: false, error: 'Partida nao iniciada.' });
+    const res = respondOffer(room.game, ctx.playerId, offerId, !!accept);
+    if (room.game.phase === 'ended') room.status = 'ended';
+    broadcast(room);
+    scheduleBots(room);
+    cb?.(res);
+  });
+
+  // Fim de partida: o anfitriao decide entre jogar de novo (mesma mesa) ou voltar ao lobby.
+  socket.on('restart', (_payload, cb) => {
+    const room = findRoom(ctx?.code);
+    if (!room) return cb?.({ ok: false, error: 'Sala invalida.' });
+    if (room.hostId !== ctx.playerId) return cb?.({ ok: false, error: 'Apenas o anfitriao reinicia.' });
+    if (!room.game) return cb?.({ ok: false, error: 'Nenhuma partida para reiniciar.' });
+    const humanos = [...room.members.values()].map((m) => ({ id: m.id, name: m.name, cls: m.cls }));
+    const classes = Object.keys(CLASSES);
+    const bots = [...room.botIds].map((id, i) => ({
+      id,
+      name: botNames(room.botIds.size)[i] || `Bot ${i + 1}`,
+      cls: classes[Math.floor(Math.random() * classes.length)],
+      bot: true,
+    }));
+    room.game = createGame([...humanos, ...bots]);
+    room.status = 'playing';
+    broadcast(room);
+    scheduleBots(room);
+    cb?.({ ok: true });
+  });
+
+  socket.on('backToLobby', (_payload, cb) => {
+    const room = findRoom(ctx?.code);
+    if (!room) return cb?.({ ok: false, error: 'Sala invalida.' });
+    if (room.hostId !== ctx.playerId) return cb?.({ ok: false, error: 'Apenas o anfitriao volta ao lobby.' });
+    room.game = null;
+    room.status = 'lobby';
+    room.botLoop = false;
+    broadcast(room);
+    cb?.({ ok: true });
   });
 
   socket.on('chat', ({ text } = {}) => {

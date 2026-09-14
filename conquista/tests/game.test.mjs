@@ -5,8 +5,8 @@ import { CONTINENTS, COUNTRIES, countriesOfContinent, incomeForRank } from '../s
 import { MISSIONS } from '../src/missions.js';
 import { EVENT_CARDS } from '../src/cards.js';
 import {
-  CLASSES, act, applyCard, attackBonus, createGame, incomeOf, neighborsOf, netWorth,
-  publicState, reinforcementsFor, taxFor, taxRateFor, tributeOf, upkeepOf,
+  CLASSES, act, applyCard, attackBonus, bankOffer, createGame, incomeOf, marketValue, neighborsOf,
+  netWorth, publicState, reinforcementsFor, respondOffer, taxFor, taxRateFor, tributeOf, upkeepOf,
 } from '../src/game.js';
 
 // rng deterministico: devolve os valores de dado pedidos, na ordem.
@@ -433,4 +433,91 @@ test('passando de 10 rodadas em calote, o banco apreende industrias', () => {
   assert.ok(home.large + home.small < 3, 'o banco levou industria');
   assert.ok(!ana.loan || ana.loan.debt < dividaAntes, 'a divida foi abatida pelo que foi apreendido');
   assert.ok(s.log.some((l) => l.text.includes('apreende')), 'apreensao registrada no historico');
+});
+
+test('paises custam 5x a renda por rodada', () => {
+  const s = newGame();
+  for (const c of s.countries) assert.equal(c.price, Math.round((c.income * 5) / 10) * 10);
+  assert.equal(s.countries.find((c) => c.rank === 1).price, 2000);
+  assert.equal(s.countries.find((c) => c.rank === 60).price, 500);
+});
+
+test('venda ao banco paga 70% do investido e devolve o pais ao mapa', () => {
+  const s = newGame();
+  const home = country(s, s.players[0].homeId);
+  const extra = s.countries.find((c) => !c.ownerId);
+  extra.ownerId = 'a';
+  extra.troops = 2;
+  s.players[0].gold = 10_000;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'build', countryId: extra.id, size: 'small' });
+  const valor = marketValue(s, extra);
+  assert.equal(valor, extra.price + 230);
+  const esperado = bankOffer(s, extra);
+  assert.equal(esperado, Math.round(valor * 0.7));
+  const ouroAntes = s.players[0].gold;
+  assert.equal(act(s, 'a', { type: 'sell', countryId: extra.id }).ok, true);
+  assert.equal(s.players[0].gold, ouroAntes + esperado);
+  assert.equal(extra.ownerId, null);
+  assert.equal(extra.small, 0);
+  assert.equal(extra.troops, 0);
+  // o ultimo pais nao pode ser vendido
+  assert.equal(act(s, 'a', { type: 'sell', countryId: home.id }).ok, false);
+});
+
+test('proposta entre jogadores: aceitar transfere pais e ouro', () => {
+  const s = newGame();
+  const extra = s.countries.find((c) => !c.ownerId);
+  extra.ownerId = 'a';
+  extra.troops = 4;
+  const [ana, bia] = s.players;
+  bia.gold = 1000;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  assert.equal(act(s, 'a', { type: 'offer', countryId: extra.id, toPlayerId: 'b', price: 400 }).ok, true);
+  assert.equal(s.offers.length, 1);
+  const proposta = s.offers[0];
+  // so quem recebeu pode responder
+  assert.equal(respondOffer(s, 'a', proposta.id, true).ok, false);
+  const ouroAna = ana.gold;
+  assert.equal(respondOffer(s, 'b', proposta.id, true).ok, true);
+  assert.equal(extra.ownerId, 'b');
+  assert.equal(extra.troops, 2, 'o comprador herda metade das tropas');
+  assert.equal(ana.gold, ouroAna + 400);
+  assert.equal(bia.gold, 600);
+  assert.equal(s.offers.length, 0);
+});
+
+test('proposta pode ser recusada, retirada e expira sozinha', () => {
+  const s = newGame({ eventWindow: 999 });
+  s.nextEventRound = 999;
+  const extra = s.countries.find((c) => !c.ownerId);
+  extra.ownerId = 'a';
+  extra.troops = 2;
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'offer', countryId: extra.id, toPlayerId: 'b', price: 300 });
+  assert.equal(respondOffer(s, 'b', s.offers[0].id, false).ok, true);
+  assert.equal(s.offers.length, 0);
+
+  act(s, 'a', { type: 'offer', countryId: extra.id, toPlayerId: 'b', price: 300 });
+  assert.equal(act(s, 'a', { type: 'cancelOffer', offerId: s.offers[0].id }).ok, true);
+  assert.equal(s.offers.length, 0);
+
+  act(s, 'a', { type: 'offer', countryId: extra.id, toPlayerId: 'b', price: 300 });
+  for (let i = 0; i < 8; i++) passTurn(s);
+  assert.equal(s.offers.length, 0, 'a proposta expirou com o tempo');
+});
+
+test('cada combate vem com id e nomes, para o cliente animar a invasao', () => {
+  const s = newGame();
+  const base = give(s, s.players[0].homeId, 'a', 6);
+  const alvoId = neighborsOf(base.id)[0];
+  give(s, alvoId, 'b', 2);
+  act(s, 'a', { type: 'roll' }, seq([1]));
+  act(s, 'a', { type: 'attack', from: base.id, to: alvoId }, seq([12, 2], 12));
+  assert.equal(s.combat.id, 1);
+  assert.equal(s.combat.attackerName, 'Ana');
+  assert.equal(s.combat.defenderName, 'Bia');
+  assert.equal(s.combat.toName, country(s, alvoId).name);
+  assert.equal(s.combat.captured, true);
+  assert.ok(s.combat.moved >= 1);
 });

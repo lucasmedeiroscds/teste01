@@ -1,7 +1,7 @@
 // Bots para partidas com poucos humanos (ou solo). A politica e simples e honesta:
 // o bot passa pelas mesmas acoes que um jogador, nada de atalho no motor.
 
-import { neighborsOf } from './game.js';
+import { bankOffer, marketValue, neighborsOf } from './game.js';
 
 const BOT_NAMES = [
   'Gen. Zap', 'Dra. Planilha', 'Sr. Offshore', 'Cel. Ctrl+C',
@@ -39,6 +39,21 @@ function melhorAtaque(s, playerId, minTropas = 3) {
     }
   }
   return melhor;
+}
+
+/**
+ * O que o bot faz com as propostas de compra que chegaram para ele: aceita quando o
+ * preco fica abaixo do que o banco pagaria (ou seja, barganha boa) e sobra caixa.
+ */
+export function botOfferDecision(s, playerId) {
+  const bot = s.players.find((p) => p.id === playerId);
+  if (!bot?.alive) return null;
+  const proposta = (s.offers || []).find((o) => o.toId === playerId);
+  if (!proposta) return null;
+  const country = s.countries.find((c) => c.id === proposta.countryId);
+  if (!country) return { offerId: proposta.id, accept: false };
+  const vale = proposta.price <= bankOffer(s, country) && bot.gold - proposta.price >= 400;
+  return { offerId: proposta.id, accept: vale && marketValue(s, country) > 0 };
 }
 
 /**

@@ -44,7 +44,16 @@ for (const [i, country] of selected) {
 }
 for (const [a, b] of SEA_ROUTES) link(a, b);
 
-const out = { viewBox: `0 0 ${W} ${H}`, countries: [] };
+const out = { viewBox: `0 0 ${W} ${H}`, countries: [], decor: [] };
+
+// Paises fora do jogo entram como cenario: aparecem no mapa, mas nao sao clicaveis.
+for (let i = 0; i < features.length; i++) {
+  if (selected.has(i)) continue;
+  const nome = geometries[i].properties.name;
+  if (nome === 'Antarctica') continue; // so ocuparia a base do mapa
+  const d = pathGen(features[i]);
+  if (d) out.decor.push({ name: nome, path: d.replace(/(\.\d)\d+/g, '$1') });
+}
 for (const [i, c] of selected) {
   const f = features[i];
   const d = pathGen(f);
@@ -77,4 +86,8 @@ if (isolated.length) throw new Error(`Paises desconectados do mapa: ${isolated.j
 
 writeFileSync(new URL('../public/data/world.json', import.meta.url), JSON.stringify(out));
 const semVizinhos = out.countries.filter((c) => c.neighbors.length < 2).map((c) => `${c.id}(${c.neighbors.length})`);
-console.log(`ok: ${out.countries.length} paises, ${seen.size} conectados, poucos vizinhos: ${semVizinhos.join(', ') || 'nenhum'}`);
+const kb = Math.round(JSON.stringify(out).length / 1024);
+console.log(
+  `ok: ${out.countries.length} paises jogaveis + ${out.decor.length} de cenario, ${seen.size} conectados, ` +
+  `${kb} KB, poucos vizinhos: ${semVizinhos.join(', ') || 'nenhum'}`,
+);

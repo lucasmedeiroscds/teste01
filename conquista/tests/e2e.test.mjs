@@ -162,3 +162,38 @@ test('modo solo pelo navegador: um humano contra dois bots', async (t) => {
   assert.match(await page.textContent('#log'), /Gen\. Zap|Dra\. Planilha|Sr\. Offshore/);
   assert.deepEqual(erros, []);
 });
+
+test('fim de partida oferece reiniciar ou voltar ao lobby', async (t) => {
+  server.listen(0);
+  await once(server, 'listening');
+  const base = `http://localhost:${server.address().port}`;
+  const executablePath = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+  const browser = await chromium.launch(existsSync(executablePath) ? { executablePath } : {});
+  t.after(async () => { await browser.close(); server.close(); });
+
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+  const erros = [];
+  page.on('pageerror', (e) => erros.push(e.message));
+  page.on('dialog', (d) => d.accept()); // o "tem certeza?" da desistencia
+
+  await page.goto(base);
+  await page.fill('#input-name', 'Ana');
+  await page.click('#btn-create');
+  await page.waitForSelector('#screen-lobby:not([hidden])');
+  await page.locator('#bots-box .btn', { hasText: '1 bot' }).click();
+  await page.waitForFunction(() => !document.querySelector('#btn-start').disabled);
+  await page.click('#btn-start');
+  await page.waitForSelector('#screen-game:not([hidden])');
+
+  // Desistir encerra a partida: sobra o bot.
+  await page.locator('#action-box .btn', { hasText: 'Desistir da partida' }).click();
+  await page.waitForSelector('#modal:not([hidden])');
+  assert.match(await page.textContent('#modal-title'), /Fim de jogo/);
+  await page.click('#modal-actions .btn');
+
+  const reiniciar = page.locator('#action-box .btn', { hasText: 'Jogar de novo' });
+  await reiniciar.waitFor();
+  await page.locator('#action-box .btn', { hasText: 'Voltar ao lobby' }).click();
+  await page.waitForSelector('#screen-lobby:not([hidden])');
+  assert.deepEqual(erros, []);
+});
